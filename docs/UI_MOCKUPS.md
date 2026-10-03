@@ -1,376 +1,337 @@
 # UI Mockups
 
-The UI is task-oriented for non-technical users. Chat is central during a drill, but every screen exposes condensed structured state so the user understands what matters without reading full transcripts.
+The UI is task-oriented. Chat is an interaction surface; structured state is always visible and is the durable product representation.
+
+## Global navigation
+
+```text
+Req Helper | My Work | Delivery Subjects | Admin* | War Room*
+                                      * permission-gated
+```
+
+A test-only persona switcher may exist in local/war-room mode, but normal product UX must not imply users can change their own role.
 
 ## 1. My Work
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│ Req Helper                                            User / role ▾ │
-├─────────────────────────────────────────────────────────────────────┤
-│ My work                                                             │
-│                                                                     │
-│ NEEDS YOU                                                           │
-│ ┌─────────────────────────────────────────────────────────────────┐ │
-│ │ Customer onboarding change                   BLOCKING · 3 items │ │
-│ │ Your lens: Architecture                                       │ │
-│ │ Confirm integration ownership and failure behavior             │ │
-│ │                                               [Continue]        │ │
-│ └─────────────────────────────────────────────────────────────────┘ │
-│                                                                     │
-│ REVIEW                                                              │
-│ ┌─────────────────────────────────────────────────────────────────┐ │
-│ │ Payment status change                     2 requirements       │ │
-│ │ Your lens: Data                           [Review]              │ │
-│ └─────────────────────────────────────────────────────────────────┘ │
-│                                                                     │
-│ FOLLOWING                                                           │
-│ Fraud rule update                              Readiness 78%         │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ My Work                                           Alice Example │
+├──────────────────────────────────────────────────────────────────┤
+│ NEEDS YOU                                                       │
+│ Customer onboarding · Architecture · BLOCKING                   │
+│ Define integration ownership                       [Continue]   │
+│                                                                  │
+│ PROCESSING                                                      │
+│ Payment change · your answer saved, AI processing               │
+│                                                                  │
+│ WAITING ON OTHER                                                │
+│ Conflict C-17 · waiting for Product decision                    │
+│                                                                  │
+│ REVIEW                                                          │
+│ Requirement R-22 changed since your last review     [Review]    │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-Principle: the user sees **why they are needed**, not a generic project dashboard.
+Only tasks/subjects the user may access are shown.
 
 ## 2. New Signal
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│ Start a delivery subject                                            │
-├─────────────────────────────────────────────────────────────────────┤
-│ What are we trying to change or solve?                              │
-│ ┌─────────────────────────────────────────────────────────────────┐ │
-│ │ We need customers to ...                                       │ │
-│ └─────────────────────────────────────────────────────────────────┘ │
-│                                                                     │
-│ Why / expected outcome?                                             │
-│ ┌─────────────────────────────────────────────────────────────────┐ │
-│ │ Optional initial context...                                    │ │
-│ └─────────────────────────────────────────────────────────────────┘ │
-│                                                                     │
-│ Links / documents / source material                                 │
-│ [+ add]                                                             │
-│                                                                     │
-│                                              [Start discovery]      │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ Start Delivery Subject                                           │
+├──────────────────────────────────────────────────────────────────┤
+│ What are we trying to change or solve?                           │
+│ [ natural-language signal                                      ] │
+│                                                                  │
+│ Expected outcome (optional)                                      │
+│ [ ...                                                          ] │
+│                                                                  │
+│ Source material                                                  │
+│ [Add link] [Upload document]                                     │
+│                                                                  │
+│                                         [Start discovery]        │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-Do not start with a requirements form. AI structures progressively.
+Uploads become SourceArtifact metadata; file bytes live in GCS/external storage.
 
-## 3. Delivery Subject Overview
+## 3. Clarify Scope
 
 ```text
-┌────────────────────────────────────────────────────────────────────────┐
-│ ← Customer onboarding change                     DRILLING · 62% ready │
-├──────────────────┬─────────────────────────────┬───────────────────────┤
-│ Perspectives     │ Current picture             │ Open issues           │
-│                  │                             │                       │
-│ ✓ Business       │ Problem                     │ 2 blocking gaps       │
-│ ● Data           │ Customers wait for manual   │ 1 conflict            │
-│ ! Security       │ verification...             │ 3 assumptions         │
-│ ○ Operations     │                             │                       │
-│ ● Architecture   │ Desired outcome             │ Next blocker          │
-│                  │ Automated verified status   │ Security ownership    │
-│                  │ available downstream...     │                       │
-│                  │                             │ Readiness              │
-│                  │ Requirements                │ ██████░░░░ 62%        │
-│                  │ 14 verified · 6 draft       │                       │
-├──────────────────┴─────────────────────────────┴───────────────────────┤
-│ Recent: Architecture answered → R-17 revised → Security verify task  │
-└────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ AI interpretation                              [Accept] [Edit]   │
+├──────────────────────────────────────────────────────────────────┤
+│ Problem       Downstream channels cannot...                      │
+│ Outcome       Channels can consume agreed verification state     │
+│ In scope      semantics · distribution · failure behavior        │
+│ Out of scope  implementation/deployment                          │
+│ Constraints   security policy · existing integration standards   │
+│ Success       implementation-ready verified package              │
+│ Unknowns      source of truth · failure mode                      │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-## 4. Drill Workspace — perspective owner / contributor
+## 4. Delivery Overview
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│ Customer onboarding change                Your lens: Architecture      │
-├─────────────────┬───────────────────────────────────┬───────────────────┤
-│ YOUR FOCUS      │ CONVERSATION                      │ CURRENT CONTEXT   │
-│                 │                                   │                   │
-│ Integration     │ AI                                │ Requirement R-17  │
-│ ownership       │ We currently believe System A    │                   │
-│                 │ publishes status and System B     │ Customer status   │
-│ Data source     │ consumes it.                      │ must be available │
-│                 │                                   │ downstream...     │
-│ Resilience      │ Can you confirm whether System B  │                   │
-│                 │ accesses the API directly?        │ Evidence          │
-│ 3 remaining     │                                   │ • Process P-12    │
-│ questions       │ YOU                               │ • API Customer-v2 │
-│                 │ [type answer...]                  │                   │
-│                 │                                   │ Related           │
-│                 │                                   │ Data ● Security ! │
-├─────────────────┴───────────────────────────────────┴───────────────────┤
-│ [I don't know] [Ask someone] [Show bigger picture]                    │
-└─────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│ Customer onboarding                         DRILLING · NOT READY   │
+├─────────────────┬─────────────────────────────┬────────────────────┤
+│ Perspectives    │ Current picture             │ Blockers           │
+│ ✓ Business      │ Outcome / scope summary     │ 2 gaps             │
+│ ✓ Data          │                             │ 1 conflict         │
+│ ✓ Architecture  │ Requirements 14             │ 2 blocking tasks   │
+│ ! Security      │ Verified 8                  │                    │
+│ ✓ Operations    │ Revised today 3             │ Readiness 68%      │
+├─────────────────┴─────────────────────────────┴────────────────────┤
+│ Members: Sponsor · Delivery Lead · 5 participants · 2 observers   │
+│ [Manage members/assignments]*                                     │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
-The right rail updates when structured state changes. The transcript is not the state.
+The management action requires subject Delivery Lead/Admin permission.
 
-## 5. Bigger Picture
+## 5. Assign Perspectives
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│ Bigger picture                                                      │
-├─────────────────────────────────────────────────────────────────────┤
-│ SIGNAL                                                              │
-│ Customer onboarding change                                         │
-│     │                                                               │
-│     ├── Business: reduce manual review                              │
-│     ├── Process: onboarding step changes                            │
-│     ├── Data: new verification state                                │
-│     ├── API: expose verification status                             │
-│     ├── Security: additional consumer/access                        │
-│     └── Operations: monitoring/failure behavior                     │
-│                                                                     │
-│ Your contribution currently touches                                │
-│ Architecture ── API ── Data ── Operations                           │
-│                                                                     │
-│ Important decisions                                                │
-│ D-03 Source of truth = Customer MDM                                 │
-│                                                                     │
-│                                           [Back to my questions]    │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ Perspective     Person       Relationship       Authority         │
+├──────────────────────────────────────────────────────────────────┤
+│ Business        Bob          OWNER              authoritative     │
+│ Architecture    Alice        OWNER              authoritative     │
+│ Data            Cara         DELEGATE           authoritative     │
+│ Security        Dana         REVIEWER           advisory only     │
+│ Security        —            —                  NEEDS OWNER       │
+└──────────────────────────────────────────────────────────────────┘
+│ Suggested experts: Dana, Sofia                    [Save]          │
 ```
 
-## 6. Requirements
+Expertise suggestions never grant authority automatically.
+
+## 6. Drill Workspace
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│ Requirements                              Perspective ▾  State ▾       │
-├─────────┬───────────────────────────────────────┬──────────┬────────────┤
-│ ID      │ Requirement                           │ Owner    │ State      │
-├─────────┼───────────────────────────────────────┼──────────┼────────────┤
-│ R-001   │ Verification state must ...           │ Product  │ VERIFIED   │
-│ R-002   │ Source of truth must be ...           │ Data     │ REVIEW     │
-│ R-003   │ API must expose ...                   │ API      │ DRAFT      │
-│ R-004   │ p95 latency must ...                  │ Ops      │ NEED INPUT │
-└─────────┴───────────────────────────────────────┴──────────┴────────────┘
-│ Selected: R-002                                                       │
-│                                                                       │
-│ Why / provenance                                                      │
-│ • Contribution C-19 (owner verified)                                  │
-│ • Concept: Customer Verification Status                               │
-│ • Decision D-03                                                       │
-│                                                                       │
-│ Acceptance                                                            │
-│ ✓ AC-20 verified path                                                  │
-│ ○ missing source-unavailable scenario                                 │
-│                                                                       │
-│ [Edit] [Request verification] [Open evidence]                          │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─────────────────┬───────────────────────────────┬──────────────────┐
+│ YOUR FOCUS      │ CONVERSATION                  │ CURRENT STATE    │
+│ Architecture    │ AI: Can you confirm...?       │ Task T-14        │
+│ 3 questions     │                               │ Req R-17 rev 3   │
+│                 │ You: [type...]                │ Evidence 4       │
+│                 │                               │ Conflict C-17    │
+├─────────────────┴───────────────────────────────┴──────────────────┤
+│ [I don't know] [Ask someone] [Show bigger picture]                │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
-## 7. Verification Task — authoritative owner
+On submit:
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│ Verify contribution                                                 │
-├─────────────────────────────────────────────────────────────────────┤
-│ Why you                                                             │
-│ You are the owner/delegate for Customer Data semantics.             │
-│                                                                     │
-│ Contributor said                                                    │
-│ "The verification state is currently mastered by System X."        │
-│                                                                     │
-│ Their relationship: Architecture contributor                        │
-│ Their confidence: medium                                            │
-│                                                                     │
-│ Existing references                                                 │
-│ • Customer concept                                                  │
-│ • System X data dictionary                                          │
-│                                                                     │
-│ [Verify] [Reject] [Amend...] [Not mine / reassign]                  │
-└─────────────────────────────────────────────────────────────────────┘
+IN_PROGRESS -> ANSWERED -> PROCESSING -> COMPLETED
+                                   \-> WAITING_ON_OTHER
 ```
 
-This screen embodies the rule: useful contribution ≠ authority.
+The user's text is saved before AI processing.
 
-## 8. Conflicts & Decisions
+## 7. Bigger Picture
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│ Conflicts & decisions                                               │
-├─────────────────────────────────────────────────────────────────────┤
-│ BLOCKING · C-17                                                     │
-│                                                                     │
-│ Architecture                                                        │
-│ "This integration must be asynchronous."                           │
-│                                                                     │
-│ Product                                                             │
-│ "The customer needs the result immediately."                       │
-│                                                                     │
-│ Operations                                                          │
-│ "The source can take up to 3 seconds."                             │
-│                                                                     │
-│ Required participants                                               │
-│ ● Product  ● Architecture  ● Operations                             │
-│                                                                     │
-│ AI-framed options                                                   │
-│ A. eventual consistency                                             │
-│ B. synchronous orchestration                                        │
-│ C. provisional response                                             │
-│                                                                     │
-│ Decision owner: Product                                             │
-│ [Discuss]                                  [Record decision]        │
-└─────────────────────────────────────────────────────────────────────┘
+Signal
+ ├─ Business outcome
+ ├─ Process impact
+ ├─ Data semantics
+ ├─ API/Integration
+ ├─ Architecture
+ ├─ Security/Risk
+ └─ Operations
+
+Your current contribution touches: Architecture -> API -> Operations
+Key decisions: D-03
+Open conflicts: C-17
 ```
 
-AI frames; human decision owner decides.
-
-## 9. Enterprise Impact
+## 8. Requirements
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│ Enterprise impact                                                   │
-├─────────────────────────────────────────────────────────────────────┤
-│ Existing element                         Proposed effect             │
-│                                                                     │
-│ Customer concept                         MODIFY                      │
-│ status                                   + verificationState         │
-│                                                                     │
-│ Onboarding process                       MODIFY                      │
-│ Verify customer                          → automated validation      │
-│                                                                     │
-│ Customer API v2                          MODIFY                      │
-│ /customer                                + verificationStatus       │
-│                                                                     │
-│ Risk policy                              POSSIBLE IMPACT             │
-│                                          needs verification          │
-│                                                                     │
-│ [Open source] [View rationale] [Mark incorrect]                     │
-└─────────────────────────────────────────────────────────────────────┘
+┌────────┬──────────────────────────────┬─────────┬──────────────┐
+│ ID     │ Requirement                  │ Rev     │ State        │
+├────────┼──────────────────────────────┼─────────┼──────────────┤
+│ R-001  │ Verification source...       │ 3       │ VERIFIED     │
+│ R-002  │ Integration contract...      │ 2       │ CONFLICTED   │
+└────────┴──────────────────────────────┴─────────┴──────────────┘
+
+Selected R-001 rev 3
+Priority: HIGH       Criticality: CRITICAL
+Owner: Data
+Current verification: Cara · VERIFIED · rev 3
+Authoritative sources: Concept K-4, Decision D-3
+Acceptance: 3 current · 1 stale from rev 2
+
+[Edit] [Request verification] [Evidence] [History]
 ```
 
-All entries are proposed diffs until future reconciliation.
+Manual Edit uses the same audited RequirementRevision path as AI edits.
 
-## 10. Work Package Split
+## 9. Requirement History Drawer
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│ Implementation areas                                                │
-├─────────────────────────────────────────────────────────────────────┤
-│ Customer API                                      READY ██████████  │
-│   Requirements R3 R7 R9                                             │
-│   Acceptance 12 · Evals 4                                           │
-│   Depends on Customer MDM                                           │
-│                                                 [Open package]       │
-│                                                                     │
-│ Customer MDM                                      80% ████████░░    │
-│   Requirements R2 R4                                                │
-│   Missing: source-unavailable behavior                              │
-│                                                                     │
-│ Monitoring                                        65% ██████░░░░    │
-│   Missing: alert ownership                                          │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ R-001 History                                                    │
+├──────────────────────────────────────────────────────────────────┤
+│ rev 3 · Alice · human edit · 10:42                              │
+│ Reason: clarified stale-state semantics                          │
+│ Verification: Cara VERIFIED                                      │
+│ Sources: C-19, K-4, D-3                                         │
+│                                                                  │
+│ rev 2 · AI proposal · 10:16                                    │
+│ Verification: SUPERSEDED                                        │
+│                                                                  │
+│ rev 1 · initial synthesis                                       │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-## 11. Work Package Detail — downstream team perspective
+This is normal product UX, not War Room tooling.
+
+## 10. Verification Task
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│ Customer API                                      READY? NO          │
-├───────────────────────────────┬─────────────────────────────────────┤
-│ REQUIREMENTS                  │ ACCEPTANCE / EVALS                  │
-│                               │                                     │
-│ R-003                         │ AC-31                               │
-│ Expose verification status    │ Given verified customer...         │
-│                               │                                     │
-│ R-009                         │ AC-32                               │
-│ Handle stale status           │ Given unavailable source...        │
-│                               │                                     │
-│ DEPENDENCIES                  │ EVAL-4                              │
-│ Customer MDM                  │ p95 <= defined threshold           │
-│ Security policy               │                                     │
-│                               │ Security check                     │
-│                               │ ...                                 │
-├───────────────────────────────┴─────────────────────────────────────┤
-│ Traceability: Signal → C-19 → R-003 → WP-API → AC-31 / EVAL-4     │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ Verify R-001 revision 3                                          │
+├──────────────────────────────────────────────────────────────────┤
+│ Why you: OWNER for Data perspective                              │
+│ Statement: ...                                                   │
+│ Sources/evidence: ...                                            │
+│ Previous rev verification: superseded                            │
+│                                                                  │
+│ [Verify] [Reject] [Amend] [Not mine / reassign]                 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-## 12. Readiness
+Reviewer UI instead offers `[Comment] [Challenge] [Recommend change]`; Reviewer alone cannot create authoritative verification.
+
+## 11. Conflict Workspace
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│ Readiness                                           NOT READY       │
-├─────────────────────────────────────────────────────────────────────┤
-│ ✓ Problem/outcome defined                                           │
-│ ✓ Required perspectives owned                                      │
-│ ✓ Critical requirements verified                                   │
-│ ! 1 blocking conflict                                               │
-│ ✓ Enterprise impacts linked                                        │
-│ ! 2 critical requirements missing acceptance criteria              │
-│ ✓ Work packages assigned                                           │
-│                                                                     │
-│ Informational score: 83%                                            │
-│                                                                     │
-│ Blocking next actions                                               │
-│ C-17  Product / Architecture / Operations            [Resolve]     │
-│ R-19  Acceptance criteria missing                    [Open]        │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ Conflict C-17 · BLOCKING                                         │
+├──────────────────────────────────────────────────────────────────┤
+│ Product / Bob                                                    │
+│ Immediate confirmation is required.             [position saved] │
+│                                                                  │
+│ Architecture / Alice                                             │
+│ Cross-domain propagation should be async.       [position saved] │
+│                                                                  │
+│ Operations / Erik                                                │
+│ Source tail latency can reach 3 seconds.         [position saved]│
+│                                                                  │
+│ AI summary                                                       │
+│ [current neutral synthesis of positions/evidence]                │
+│                                                                  │
+│ Decision owner: Bob                                              │
+│ [Add my position] [View evidence] [Record decision]*             │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-The percentage is informational. READY is boolean and deterministic.
+Each participant uses their own task/thread. This page aggregates structured positions; it never creates one shared OpenCode session.
 
-## 13. Final Package
+## 12. Enterprise Impact
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│ Requirement package                                     READY ✓     │
-├─────────────────────────────────────────────────────────────────────┤
-│ Executive summary                                                   │
-│ Scope / outcomes                                                    │
-│ Decisions                                                          │
-│ Assumptions                                                        │
-│ Requirements                                                       │
-│ Enterprise impacts                                                 │
-│ Work packages                                                      │
-│ Acceptance criteria                                                │
-│ Evaluations                                                        │
-│ Dependencies                                                       │
-│ Traceability                                                       │
-│ Readiness evidence                                                 │
-│                                                                     │
-│ [Export JSON] [Export Markdown] [Downstream handoff]               │
-└─────────────────────────────────────────────────────────────────────┘
+Knowledge element              Proposed diff              Status
+Customer concept               MODIFY +verificationState  CONFIRMED
+Customer API                   MODIFY contract            PROPOSED
+Risk policy                    UNKNOWN_CHANGE             NEED REVIEW
+
+[Open source] [Rationale] [Confirm] [Reject] [Correct]
 ```
 
-## 14. War Room
+## 13. Work Packages
 
 ```text
-┌────────────────────────────────────────────────────────────────────────┐
-│ War room · Customer onboarding change                                 │
-├────────────────────┬─────────────────────────┬─────────────────────────┤
-│ WORKFLOW           │ AGENT ACTIVITY          │ QUALITY / DOMAIN        │
-│                    │                         │                         │
-│ DRILLING           │ 18 model calls          │ 14 reqs verified        │
-│ 4 humans active    │ 6 tool calls            │ 3 gaps                  │
-│ 2 waiting          │ 2 schema retries        │ 1 conflict              │
-│                    │                         │                         │
-│ Waiting            │ Latest transitions      │ Readiness 62%           │
-│ Security owner     │ C19 → R8 revised        │ ██████░░░░              │
-│ Operations owner   │ R8 → review task        │                         │
-├────────────────────┴─────────────────────────┴─────────────────────────┤
-│ Trace timeline                                                        │
-│ 10:14 plan_drill      OK  1.2s  prompt poc-v1:plan-drill             │
-│ 10:14 ask_human       WAITING user:security-owner                     │
-│ 10:16 extract         OK  0.8s  2 contributions                       │
-│ 10:16 synthesize      OK  1.5s  R-8 revised                           │
-│                                                                        │
-│ [Open trace] [Rerun analysis] [Override assignment] [Classify issue] │
-└────────────────────────────────────────────────────────────────────────┘
+Customer API
+Target area: enterprise://areas/customer-api
+Target team: API Platform
+Coordinator: Alice
+Requirements: R3 R7 R9
+Dependencies: MDM package
+Acceptance: 12 · Evals: 4
+[Open]
 ```
 
-## Perspective behavior summary
+Do not use a human owner as the implementation-area identifier.
 
-- **Sponsor:** outcome and progress first; no implementation detail by default.
-- **Business/Product:** value, rules, customer/process behavior, prioritization and decisions.
-- **Process:** actors, steps, hand-offs, exceptions and current/future process impact.
-- **Data:** meaning, ownership, lineage, source-of-truth, quality and lifecycle.
-- **Architecture:** system boundaries, dependencies, patterns, constraints and trade-offs.
-- **Security/Privacy/Risk/Compliance:** controls, policy obligations, data exposure, evidence and approval needs.
-- **Operations:** SLOs, failure behavior, observability, support model and recovery.
-- **API/Integration/System:** contracts, producers/consumers, compatibility, sequencing and technical edge cases.
-- **UX:** user journeys, accessibility, error states and interaction acceptance.
-- **Delivery Lead:** coverage, blockers, ownership and readiness across perspectives.
-- **Downstream team:** only its work package by default, with traceability/bigger picture available on demand.
+## 14. Work Package Detail
+
+```text
+Requirements | Package acceptance | Evals | Dependencies | Traceability
+
+Package-level AC: end-to-end verified-state propagation across MDM + API
+Requirement ACs: ...
+Package eval: integration regression suite
+
+Trace: Signal -> Evidence -> Requirement rev -> Verification -> Package -> Eval
+```
+
+Acceptance/evals may target Requirement, WorkPackage or DeliverySubject.
+
+## 15. Readiness
+
+```text
+NOT READY · 81% informational
+
+✓ Outcome defined
+✓ Required perspectives confirmed
+! Security required perspective lacks OWNER/DELEGATE
+✓ Current critical requirement verification
+! Conflict C-17 open
+! Dependency DEP-4 unresolved (owned does not clear blocker)
+! Blocking task T-19 still PROCESSING
+
+[Open next blocker]
+```
+
+## 16. Final Package
+
+```text
+READY ✓
+
+Outcome & scope
+Source artifacts
+Decisions / assumptions
+Requirements + revision/provenance/verification
+Enterprise impacts
+Work packages
+Acceptance / evals
+Dependencies / traceability
+Readiness evidence
+
+[Export JSON] [Export Markdown]
+Package API: /api/delivery-subjects/DS-123/package
+```
+
+## 17. War Room
+
+```text
+Workflow     Agent activity            Context
+DRILLING     Run 8 SUCCEEDED           domain start 41
+2 processing OpenCode generation 2     presented 41
+1 waiting    hydration FULL            domain end 44
+
+[Open trace] [Rerun analysis] [Classify issue]
+[Manage assignment]*
+```
+
+`Manage assignment` is visible only if the current user also has ADMIN or subject Delivery Lead permission.
+
+## 18. Admin
+
+See `docs/ADMIN_UI.md`. Admin configures global application roles/templates. Subject membership and perspective authority remain explicit separate concepts.
+
+## UX invariants
+
+1. A live remote update must not erase an unsent local chat draft.
+2. If an object being edited changes remotely, show a stale-edit warning before overwrite.
+3. Every generated question can explain “why you / why now”.
+4. Every requirement exposes current provenance, verification and history.
+5. “AI says verified” is never presented as human verification.
+6. Authority labels are explicit in verification/conflict views.
+7. PROCESSING is visible so users know their answer was saved even while OpenCode is running.
+8. Permission-gated controls are hidden/disabled with an explanation rather than failing late.
