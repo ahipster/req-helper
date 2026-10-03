@@ -17,6 +17,15 @@ import type {
   Verification,
   WorkPackage,
 } from "./schemas.js";
+import type {
+  ArchitectureChangeProposal,
+  ArchitectureElement,
+  ArchitectureRelationship,
+  DeliverySubjectArchitectureContext,
+  RequirementArchitectureImpact,
+  RequirementProfileArchitecturePolicy,
+  WorkPackageImplementationTarget,
+} from "./architecture.js";
 
 export type ReadinessCheck = {
   code: string;
@@ -51,6 +60,13 @@ export type ReadinessSnapshot = {
   dependencies: Dependency[];
   tasks: Task[];
   requiredImpactLinksSatisfied?: boolean;
+  architecturePolicy?: RequirementProfileArchitecturePolicy;
+  architectureContext?: DeliverySubjectArchitectureContext;
+  architectureElements?: ArchitectureElement[];
+  architectureRelationships?: ArchitectureRelationship[];
+  architectureImpacts?: RequirementArchitectureImpact[];
+  architectureChangeProposals?: ArchitectureChangeProposal[];
+  workPackageImplementationTargets?: WorkPackageImplementationTarget[];
 };
 
 const critical = (value: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL") =>
@@ -80,6 +96,13 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
   const requirementChangeProposals = snapshot.requirementChangeProposals ?? [];
   const requirementMatches = snapshot.requirementMatches ?? [];
   const requirementQualityFindings = snapshot.requirementQualityFindings ?? [];
+  const architectureElements = snapshot.architectureElements ?? [];
+  const architectureRelationships = snapshot.architectureRelationships ?? [];
+  const architectureImpacts = snapshot.architectureImpacts ?? [];
+  const architectureChangeProposals = snapshot.architectureChangeProposals ?? [];
+  const workPackageImplementationTargets = snapshot.workPackageImplementationTargets ?? [];
+  const architecturePolicy = snapshot.architecturePolicy;
+  const architectureRequired = architecturePolicy?.requireArchitectureBaseline === true;
   const checks: ReadinessCheck[] = [];
 
   const outcomeReady = Boolean(
@@ -123,6 +146,8 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
   });
 
   const activeRequirements = requirements.filter((r) => r.status !== "SUPERSEDED");
+  const criticalRequirements = activeRequirements.filter((r) => critical(r.criticality));
+
   const classifiedRequirementIds = new Set(
     requirementChangeProposals
       .map((proposal) => proposal.proposedRequirementId)
@@ -170,6 +195,140 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     relatedObjectIds: unresolvedMatchIds,
   });
 
+  const architecturePinned = Boolean(snapshot.architectureContext);
+  checks.push({
+    code: "ARCHITECTURE_BASELINE_PINNED",
+    passed: !architectureRequired || architecturePinned,
+    blocking: architectureRequired,
+    message: !architectureRequired
+      ? "The selected profile does not require an architecture baseline."
+      : architecturePinned
+        ? `Architecture baseline ${snapshot.architectureContext?.architectureBaselineId} v${snapshot.architectureContext?.architectureBaselineVersion} is pinned.`
+        : "The selected profile requires a published architecture baseline.",
+    relatedObjectIds: architecturePinned ? [snapshot.architectureContext!.id] : [deliverySubject.id],
+  });
+
+  const architectureBaselineCurrent =
+    !architectureRequired || snapshot.architectureContext?.status === "CURRENT";
+  checks.push({
+    code: "ARCHITECTURE_BASELINE_CURRENT",
+    passed: architectureBaselineCurrent,
+    blocking: architectureRequired,
+    message: architectureBaselineCurrent
+      ? "The pinned architecture baseline is current for this subject."
+      : "The pinned architecture baseline is stale and architecture impact must be reassessed.",
+    relatedObjectIds:
+      architectureBaselineCurrent || !snapshot.architectureContext
+        ? []
+        : [snapshot.architectureContext.id],
+  });
+
+  const staleArchitectureProposalIds = architectureChangeProposals
+    .filter((proposal) => proposal.status === "STALE_BASELINE")
+    .map((proposal) => proposal.id);
+  checks.push({
+    code: "NO_STALE_ARCHITECTURE_CHANGES",
+    passed: staleArchitectureProposalIds.length === 0,
+    blocking: architectureRequired,
+    message:
+      staleArchitectureProposalIds.length === 0
+        ? "No architecture change proposal targets a stale baseline."
+        : `${staleArchitectureProposalIds.length} architecture change proposal(s) require rebasing.`,
+    relatedObjectIds: staleArchitectureProposalIds,
+  });
+
+  const staleArchitectureImpactIds = architectureImpacts
+    .filter((impact) => impact.status === "STALE_BASELINE")
+    .map((impact) => impact.id);
+  checks.push({
+    code: "NO_STALE_ARCHITECTURE_IMPACTS",
+    passed: staleArchitectureImpactIds.length === 0,
+    blocking: architectureRequired,
+    message:
+      staleArchitectureImpactIds.length === 0
+        ? "No architecture impact targets a stale baseline."
+        : `${staleArchitectureImpactIds.length} architecture impact(s) require reassessment.`,
+    relatedObjectIds: staleArchitectureImpactIds,
+  });
+
+  if (architecturePolicy?.requireConfirmedImpactForHighCritical) {
+    const missingImpactRequirementIds = criticalRequirements
+      .filter(
+        (requirement) =>
+          !architectureImpacts.some(
+            (impact) =>
+              impact.requirementId === requirement.id &&
+              impact.requirementRevision === requirement.revision &&
+              impact.status === "CONFIRMED" &&
+              (!snapshot.architectureContext ||
+                (impact.architectureBaselineId === snapshot.architectureContext.architectureBaselineId &&
+                  impact.architectureBaselineVersion === snapshot.architectureContext.architectureBaselineVersion)),
+          ),
+      )
+      .map((requirement) => requirement.id);
+    checks.push({
+      code: "CRITICAL_REQUIREMENTS_HAVE_ARCHITECTURE_IMPACT",
+      passed: missingImpactRequirementIds.length === 0,
+      blocking: true,
+      message:
+        missingImpactRequirementIds.length === 0
+          ? "All high/critical requirements have a confirmed current-revision architecture impact."
+          : `${missingImpactRequirementIds.length} high/critical requirement(s) lack confirmed architecture impact.`,
+      relatedObjectIds: missingImpactRequirementIds,
+    });
+  }
+
+  if (architecturePolicy && !architecturePolicy.allowNeedsReviewElementsForImpact) {
+    const elementByKey = new Map(architectureElements.map((element) => [element.stableKey, element]));
+    const relationshipById = new Map(
+      architectureRelationships.map((relationship) => [relationship.id, relationship]),
+    );
+    const untrustedImpactIds = architectureImpacts
+      .filter((impact) => impact.status === "CONFIRMED")
+      .filter((impact) => {
+        const target = elementByKey.get(impact.architectureElementKey);
+        if (!target || target.reviewStatus !== "CONFIRMED") return true;
+        return impact.sourceRelationshipIds.some(
+          (relationshipId) => relationshipById.get(relationshipId)?.reviewStatus !== "CONFIRMED",
+        );
+      })
+      .map((impact) => impact.id);
+    checks.push({
+      code: "ARCHITECTURE_IMPACTS_USE_TRUSTED_TOPOLOGY",
+      passed: untrustedImpactIds.length === 0,
+      blocking: architectureRequired,
+      message:
+        untrustedImpactIds.length === 0
+          ? "Confirmed architecture impacts rely only on reviewed topology."
+          : `${untrustedImpactIds.length} confirmed architecture impact(s) rely on missing or NEEDS_REVIEW topology.`,
+      relatedObjectIds: untrustedImpactIds,
+    });
+  }
+
+  if (architecturePolicy?.requireImplementationTargetForHighCritical) {
+    const impactById = new Map(architectureImpacts.map((impact) => [impact.id, impact]));
+    const targetedRequirementIds = new Set(
+      workPackageImplementationTargets
+        .map((target) => impactById.get(target.architectureImpactId))
+        .filter((impact): impact is RequirementArchitectureImpact => Boolean(impact))
+        .filter((impact) => impact.status === "CONFIRMED")
+        .map((impact) => impact.requirementId),
+    );
+    const missingImplementationTargetIds = criticalRequirements
+      .filter((requirement) => !targetedRequirementIds.has(requirement.id))
+      .map((requirement) => requirement.id);
+    checks.push({
+      code: "CRITICAL_REQUIREMENTS_HAVE_IMPLEMENTATION_TARGET",
+      passed: missingImplementationTargetIds.length === 0,
+      blocking: true,
+      message:
+        missingImplementationTargetIds.length === 0
+          ? "All high/critical requirements are routed to concrete architecture implementation targets."
+          : `${missingImplementationTargetIds.length} high/critical requirement(s) lack a work-package implementation target.`,
+      relatedObjectIds: missingImplementationTargetIds,
+    });
+  }
+
   const requiredPerspectives = perspectives.filter((p) => p.required);
   const unconfirmedPerspectiveIds = requiredPerspectives
     .filter((p) => p.status === "PROPOSED")
@@ -206,8 +365,6 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
         : `${unownedPerspectiveIds.length} required perspective(s) lack an active owner/delegate.`,
     relatedObjectIds: unownedPerspectiveIds,
   });
-
-  const criticalRequirements = activeRequirements.filter((r) => critical(r.criticality));
 
   const verificationHasAuthority = (verification: Verification) =>
     Boolean(verification.perspectiveId) &&
