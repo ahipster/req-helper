@@ -179,18 +179,28 @@ export const ArchitectureIngestionRunSchema = z.object({
   endedAt: z.string().optional(),
 });
 
-export const ArchitectureBaselineSchema = z.object({
-  id: z.string(),
-  version: z.number().int().positive(),
-  status: z.enum(["DRAFT", "PUBLISHED", "SUPERSEDED"]),
-  sourceCommits: z.array(ArchitectureSourceCommitSchema).min(1),
-  ingestionRunIds: z.array(z.string()).min(1),
-  schemaVersion: z.string(),
-  fingerprint: z.string(),
-  createdAt: z.string(),
-  publishedAt: z.string().optional(),
-  publishedBy: z.string().optional(),
-});
+export const ArchitectureBaselineSchema = z
+  .object({
+    id: z.string(),
+    version: z.number().int().positive(),
+    status: z.enum(["DRAFT", "PUBLISHED", "SUPERSEDED"]),
+    sourceCommits: z.array(ArchitectureSourceCommitSchema).min(1),
+    ingestionRunIds: z.array(z.string()).min(1),
+    schemaVersion: z.string(),
+    fingerprint: z.string(),
+    createdAt: z.string(),
+    publishedAt: z.string().optional(),
+    publishedBy: z.string().optional(),
+  })
+  .superRefine((baseline, ctx) => {
+    if (baseline.status === "PUBLISHED" && !baseline.publishedAt) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["publishedAt"],
+        message: "A PUBLISHED architecture baseline requires publishedAt.",
+      });
+    }
+  });
 
 export const DeliverySubjectArchitectureContextSchema = z.object({
   id: z.string(),
@@ -216,24 +226,34 @@ export const RequirementArchitectureImpactType = z.enum([
   "NO_CHANGE",
 ]);
 
-export const RequirementArchitectureImpactSchema = z.object({
-  id: z.string(),
-  deliverySubjectId: z.string(),
-  requirementId: z.string(),
-  requirementRevision: z.number().int().positive(),
-  architectureBaselineId: z.string(),
-  architectureBaselineVersion: z.number().int().positive(),
-  architectureElementKey: z.string().min(1),
-  architectureElementFingerprint: z.string().optional(),
-  impactType: RequirementArchitectureImpactType,
-  rationale: z.string().min(1),
-  confidence: z.number().min(0).max(1).optional(),
-  sourceRelationshipIds: z.array(z.string()).default([]),
-  status: z.enum(["PROPOSED", "CONFIRMED", "REJECTED", "STALE_BASELINE"]),
-  confirmedBy: z.string().optional(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-});
+export const RequirementArchitectureImpactSchema = z
+  .object({
+    id: z.string(),
+    deliverySubjectId: z.string(),
+    requirementId: z.string(),
+    requirementRevision: z.number().int().positive(),
+    architectureBaselineId: z.string(),
+    architectureBaselineVersion: z.number().int().positive(),
+    architectureElementKey: z.string().min(1),
+    architectureElementFingerprint: z.string().optional(),
+    impactType: RequirementArchitectureImpactType,
+    rationale: z.string().min(1),
+    confidence: z.number().min(0).max(1).optional(),
+    sourceRelationshipIds: z.array(z.string()).default([]),
+    status: z.enum(["PROPOSED", "CONFIRMED", "REJECTED", "STALE_BASELINE"]),
+    confirmedBy: z.string().optional(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .superRefine((impact, ctx) => {
+    if (impact.status === "CONFIRMED" && !impact.confirmedBy) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["confirmedBy"],
+        message: "A CONFIRMED architecture impact requires confirmedBy.",
+      });
+    }
+  });
 
 export const ArchitectureChangeType = z.enum([
   "ADD",
@@ -243,25 +263,42 @@ export const ArchitectureChangeType = z.enum([
   "NO_CHANGE",
 ]);
 
-export const ArchitectureChangeProposalSchema = z.object({
-  id: z.string(),
-  deliverySubjectId: z.string(),
-  targetType: z.enum(["ELEMENT", "RELATIONSHIP"]),
-  changeType: ArchitectureChangeType,
-  architectureBaselineId: z.string(),
-  architectureBaselineVersion: z.number().int().positive(),
-  baselineTargetId: z.string().optional(),
-  baselineTargetFingerprint: z.string().optional(),
-  proposedStableKey: z.string().optional(),
-  proposedType: z.string().optional(),
-  proposedName: z.string().optional(),
-  proposedDescription: z.string().optional(),
-  sourceRequirementIds: z.array(z.string()).default([]),
-  rationale: z.string().min(1),
-  status: z.enum(["DRAFT", "PROPOSED", "CONFIRMED", "REJECTED", "SUPERSEDED", "STALE_BASELINE"]),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-});
+export const ArchitectureChangeProposalSchema = z
+  .object({
+    id: z.string(),
+    deliverySubjectId: z.string(),
+    targetType: z.enum(["ELEMENT", "RELATIONSHIP"]),
+    changeType: ArchitectureChangeType,
+    architectureBaselineId: z.string(),
+    architectureBaselineVersion: z.number().int().positive(),
+    baselineTargetId: z.string().optional(),
+    baselineTargetFingerprint: z.string().optional(),
+    proposedStableKey: z.string().optional(),
+    proposedType: z.string().optional(),
+    proposedName: z.string().optional(),
+    proposedDescription: z.string().optional(),
+    sourceRequirementIds: z.array(z.string()).default([]),
+    rationale: z.string().min(1),
+    status: z.enum(["DRAFT", "PROPOSED", "CONFIRMED", "REJECTED", "SUPERSEDED", "STALE_BASELINE"]),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .superRefine((proposal, ctx) => {
+    if (proposal.changeType === "ADD" && !proposal.proposedStableKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["proposedStableKey"],
+        message: "ADD architecture change requires proposedStableKey.",
+      });
+    }
+    if (proposal.changeType !== "ADD" && !proposal.baselineTargetId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["baselineTargetId"],
+        message: `${proposal.changeType} architecture change requires baselineTargetId.`,
+      });
+    }
+  });
 
 export const WorkPackageImplementationTargetSchema = z.object({
   id: z.string(),
@@ -274,16 +311,36 @@ export const WorkPackageImplementationTargetSchema = z.object({
   createdAt: z.string(),
 });
 
-export const RequirementProfileArchitecturePolicySchema = z.object({
-  id: z.string(),
-  profileId: z.string(),
-  profileVersion: z.number().int().positive(),
-  requireArchitectureBaseline: z.boolean().default(false),
-  requireConfirmedImpactForHighCritical: z.boolean().default(false),
-  requireImplementationTargetForHighCritical: z.boolean().default(false),
-  allowNeedsReviewElementsForImpact: z.boolean().default(false),
-  createdAt: z.string(),
-});
+export const RequirementProfileArchitecturePolicySchema = z
+  .object({
+    id: z.string(),
+    profileId: z.string(),
+    profileVersion: z.number().int().positive(),
+    requireArchitectureBaseline: z.boolean().default(false),
+    requireConfirmedImpactForHighCritical: z.boolean().default(false),
+    requireImplementationTargetForHighCritical: z.boolean().default(false),
+    allowNeedsReviewElementsForImpact: z.boolean().default(false),
+    createdAt: z.string(),
+  })
+  .superRefine((policy, ctx) => {
+    if (policy.requireConfirmedImpactForHighCritical && !policy.requireArchitectureBaseline) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["requireArchitectureBaseline"],
+        message: "Confirmed architecture impact requires an architecture baseline.",
+      });
+    }
+    if (
+      policy.requireImplementationTargetForHighCritical &&
+      !policy.requireConfirmedImpactForHighCritical
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["requireConfirmedImpactForHighCritical"],
+        message: "Implementation targets require confirmed architecture impact.",
+      });
+    }
+  });
 
 export type ArchitectureSource = z.infer<typeof ArchitectureSourceSchema>;
 export type ArchitectureSourceCommit = z.infer<typeof ArchitectureSourceCommitSchema>;
