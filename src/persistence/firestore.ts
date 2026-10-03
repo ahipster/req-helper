@@ -4,6 +4,7 @@ import {
   Timestamp,
   getFirestore,
   type Firestore,
+  type Transaction,
 } from "firebase-admin/firestore";
 
 const app =
@@ -59,11 +60,7 @@ export type AuditEventInput = {
  */
 export async function mutateSubject<T>(
   subjectId: string,
-  mutate: Parameters<Firestore["runTransaction"]>[0] extends (
-    transaction: infer TX,
-  ) => Promise<unknown>
-    ? (transaction: TX, currentRevision: number) => Promise<T>
-    : never,
+  mutate: (transaction: Transaction, currentRevision: number) => Promise<T>,
   event?: AuditEventInput,
 ): Promise<{ result: T; revision: number }> {
   const root = subjectRef(firestore, subjectId);
@@ -74,7 +71,7 @@ export async function mutateSubject<T>(
 
     const currentRevision = Number(snapshot.get("revision") ?? 0);
     const nextRevision = currentRevision + 1;
-    const result = await mutate(tx as never, currentRevision);
+    const result = await mutate(tx, currentRevision);
 
     tx.update(root, {
       revision: nextRevision,
