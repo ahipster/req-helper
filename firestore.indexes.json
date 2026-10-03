@@ -2,7 +2,7 @@
   "indexes": [
     {
       "collectionGroup": "tasks",
-      "queryScope": "COLLECTION",
+      "queryScope": "COLLECTION_GROUP",
       "fields": [
         { "fieldPath": "assigneeId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" },
