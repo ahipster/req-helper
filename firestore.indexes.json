@@ -81,6 +81,77 @@
       ]
     },
     {
+      "collectionGroup": "architectureImpacts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "requirementId", "order": "ASCENDING" },
+        { "fieldPath": "requirementRevision", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "architectureImpacts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "architectureElementKey", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "architectureChangeProposals",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "changeType", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "workPackageImplementationTargets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "workPackageId", "order": "ASCENDING" },
+        { "fieldPath": "architectureElementKey", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "elements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "reviewStatus", "order": "ASCENDING" },
+        { "fieldPath": "stableKey", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "relationships",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "sourceElementKey", "order": "ASCENDING" },
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "reviewStatus", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "relationships",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "targetElementKey", "order": "ASCENDING" },
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "reviewStatus", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ingestionFindings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "blocking", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "severity", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "conflicts",
       "queryScope": "COLLECTION",
       "fields": [

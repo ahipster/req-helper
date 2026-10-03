@@ -13,7 +13,7 @@ Req Helper uses persisted Firestore state/tasks plus deterministic application s
    |
 [Suggest/select PUBLISHED Requirement Profile]
    |
-[Pin exact profile version]
+[Pin exact profile version + architecture policy]
    |
 [Clarify problem / outcome / scope / constraints / success]
    |
@@ -21,11 +21,22 @@ Req Helper uses persisted Firestore state/tasks plus deterministic application s
    |
 [Discover CURRENT enterprise requirements + knowledge]
    |
+<Profile requires architecture?>
+   | YES
+   v
+[Pin PUBLISHED ArchitectureBaseline exact version/fingerprint]
+   |
+[Retrieve bounded current topology around relevant capabilities/processes/concepts]
+   |
+   +-------------------------+
+   | NO                      |
+   +-------------------------+
+             |
 [Discover ACTIVE proposals from other Delivery Subjects]
    |
 [Create RequirementMatch candidates]
    |
-[OpenCode proposes impacts + perspectives + initial change operations]
+[OpenCode proposes perspectives + initial requirement change operations]
    |
 [Delivery Lead confirms required perspectives]
    |
@@ -51,11 +62,17 @@ Req Helper uses persisted Firestore state/tasks plus deterministic application s
    |       |
    |     [Evaluate pinned Requirement Profile]
    |       |
+   |     <Architecture impact required/relevant?>
+   |        | YES -> [Query bounded pinned topology]
+   |        |         -> [Propose RequirementArchitectureImpact]
+   |        |         -> [Create review/confirmation task when material]
+   |        | NO
+   |       |
    |     [Propose Gap/Assumption/Conflict/Decision tasks]
    |       |
-   |     [Validate authz/schema/subject revision/baseline version/idempotency]
+   |     [Validate authz/schema/subject revision/all baseline versions/idempotency]
    |       |
-   |     [Firestore transaction + Revision/Source/Proposal/Match/Finding/Event]
+   |     [Firestore transaction + Revision/Source/Proposal/Match/Finding/Impact/Event]
    |       |
    |     <Needs another human?>
    |        | YES -> [WAITING_ON_OTHER + related task]
@@ -67,25 +84,30 @@ Req Helper uses persisted Firestore state/tasks plus deterministic application s
    |
 [Detect gaps / assumptions / N-party conflicts / proposal collisions]
    |
-<Baseline/source stale?> -- YES --> [Compare/rebase/reassess] --> relevant stage
+<Requirement/knowledge/architecture baseline stale?>
+   | YES -> [Compare/rebase/reassess affected proposals + impacts] -> relevant stage
    |
   NO
    v
-<Blocking issues/profile findings/matches?>
+<Blocking issues/profile findings/matches/architecture impacts?>
    | YES
    v
-[Create VERIFY / FILL_GAP / REVIEW_MATCH / RESOLVE_CONFLICT / DECIDE tasks]
+[Create VERIFY / FILL_GAP / REVIEW_MATCH / REVIEW_IMPACT / RESOLVE_CONFLICT / DECIDE tasks]
    |
-[Human verification / match review / positions / decisions]
+[Human verification / impact confirmation / match review / positions / decisions]
    |
-[Reassess proposed requirements/change operations]
+[Reassess requirements/change operations/architecture impacts]
    +-----------------------------> [Cross-perspective synthesis]
    |
    NO / resolved
    v
-[Identify implementation areas]
+[Create WorkPackages from proposed change set]
    |
-[Create WorkPackages + Dependencies from proposed change set]
+[Route packages through CONFIRMED RequirementArchitectureImpact]
+   |
+[Create WorkPackageImplementationTarget -> architecture element -> repo/team where current topology supports it]
+   |
+[Create Dependencies]
    |
 [Generate requirement/package/subject acceptance + evals]
    |
@@ -99,10 +121,79 @@ Req Helper uses persisted Firestore state/tasks plus deterministic application s
    |
 [Publish JSON + Markdown + read-only CHANGE-SET API]
    |
-[HANDED_OFF — current catalogue/source remains unchanged]
+[HANDED_OFF — current catalogue/knowledge/architecture Git remain unchanged]
    |
 (Downstream SDLC implements/deploys; later reconciliation is outside P0)
 ```
+
+## Architecture ingestion subprocess — admin/backend, separate from participant threads
+
+```text
+[Configured Git Markdown architecture sources]
+   |
+[Resolve exact source commits]
+   |
+[Enumerate + fingerprint Markdown files]
+   |
+[Deterministic front-matter/link hints]
+   |
+[LLM extract per bounded document]
+   |   elements / relationships / views / unresolved refs
+   |
+[Deterministic cross-file reconcile]
+   |   stable IDs / endpoints / duplicates / conflicts
+   |
+[Persist ArchitectureIngestionFinding]
+   |
+<Blocking findings?> -- YES --> [Human/admin review + resolve/waive] -> reconcile/validate
+   |
+  NO
+   v
+[validateArchitectureForPublication]
+   |
+<PUBLISHABLE?> -- NO --> stop
+   |
+  YES
+   v
+[Backend publishes immutable ArchitectureBaseline]
+```
+
+The LLM never publishes a baseline or silently merges similarly named systems.
+
+## Requirement-to-architecture impact subprocess
+
+```text
+[Current proposed Requirement revision]
+   |
+[Load pinned ArchitectureBaseline]
+   |
+[Query bounded topology around capability/process/concept/system refs]
+   |
+[OpenCode assess-architecture-impact]
+   |
+[Propose RequirementArchitectureImpact]
+   |
+[Show traversal + Git source evidence]
+   |
+<Human review>
+   +-- CONFIRM -> usable for routing
+   +-- CORRECT -> update proposal/re-run bounded analysis
+   +-- REJECT  -> not usable for routing
+```
+
+Impact types include `IMPLEMENT`, `MODIFY`, `ADAPT`, `CONFIGURE`, `MIGRATE`, `DEPRECATE`, `VERIFY_ONLY`, `NO_CHANGE`, etc. `VERIFY_ONLY` must not be converted into a code-change target.
+
+## Architecture structural-change subprocess
+
+```text
+[Confirmed requirement impact suggests topology itself changes]
+ -> ArchitectureChangeProposal
+      ADD | MODIFY | REMOVE | DEPRECATE | NO_CHANGE
+ -> human review
+ -> stays PROPOSED through READY/HANDED_OFF
+```
+
+There is no P0 write-back to architecture Git. A later delivered Git change may be ingested as a new CURRENT ArchitectureBaseline.
 
 ## Existing-requirement matching subprocess
 
@@ -129,66 +220,49 @@ Req Helper uses persisted Firestore state/tasks plus deterministic application s
 [classify CREATE/MODIFY/SUPERSEDE/RETIRE/NO_CHANGE]
 ```
 
-The model's similarity score is not authority. A profile may require this subprocess before CREATE.
+The model's similarity score is evidence, not authority.
 
 ## Baseline staleness subprocess
 
+Requirement:
+
 ```text
-[Proposal pins REQ-248 v6]
-        |
-[read current catalogue]
-        |
-<current still v6?> -- YES --> continue
-        |
-       NO
-        v
-[mark STALE_BASELINE]
-        |
-[compare old baseline -> new baseline]
-        |
-[rebase proposal / reassess matches + conflicts + profile findings]
-        |
-[human confirms updated proposal where needed]
+proposal pins REQ-248 v6
+ -> catalogue advances to v7
+ -> STALE_BASELINE
+ -> compare/rebase/reassess matches/conflicts/profile/impacts
 ```
 
-Knowledge ProposedDiff follows the same flow using source version/fingerprint.
+Knowledge uses source version/fingerprint.
+
+Architecture:
+
+```text
+subject pins ArchitectureBaseline AB-9 v9
+ -> current published architecture advances to AB-10 v10
+ -> DeliverySubjectArchitectureContext = STALE_BASELINE
+ -> mark/reassess dependent architecture impacts/change proposals
+ -> re-query current topology
+ -> human re-confirms material impacts
+```
 
 ## Requirement Profile subprocess
 
-### Initial pin
+Initial pin:
 
 ```text
-[subject kind/context]
+subject kind/context
  -> suggest PUBLISHED profile
  -> Delivery Lead confirms
  -> pin profileId/version
+ -> load architecture policy
  -> create required perspectives
- -> evaluate initial profile findings
+ -> evaluate initial findings
 ```
 
-### Requirement evaluation
+If architecture policy requires baseline/impact/implementation targets, those become deterministic readiness obligations.
 
-```text
-[proposed Requirement revision changes]
- -> load pinned profile version
- -> validate enabled type + required fields/details
- -> validate capability/provenance requirements
- -> validate acceptance/eval rules
- -> persist/update RequirementQualityFinding records
-```
-
-### Upgrade
-
-```text
-[new profile version published]
- -> subject remains on old version
- -> [Compare versions]
- -> preview added/removed findings
- -> Delivery Lead chooses keep or explicit upgrade
- -> upgrade audit event + re-evaluation
-```
-
-No silent readiness-rule change.
+Profile upgrade remains explicit: compare versions, preview new/removed requirement and architecture findings, then keep or upgrade with audit event.
 
 ## Human task subprocess
 
@@ -198,120 +272,77 @@ OPEN -> IN_PROGRESS -> ANSWERED -> PROCESSING -> COMPLETED
 Any nonterminal -> CANCELLED
 ```
 
-Human answer is persisted before OpenCode invocation. Provider failure leaves retriable durable input.
+Human answer is persisted before OpenCode invocation.
 
-Special responses:
+## Verification / requirement edit subprocess
 
-```text
-I don't know
- -> Contribution(UNKNOWN)
- -> route to likely owner/expert
+Requirement verification always targets exact current proposal revision and appropriate OWNER/DELEGATE authority.
 
-Ask someone
- -> suggest participant
- -> authorized membership/assignment step if needed
- -> create related task
-```
-
-## Verification subprocess
+A semantic requirement edit:
 
 ```text
-[proposed Requirement/Contribution/ProposedDiff needs authority]
- -> identify OWNER/DELEGATE
- -> VERIFY task
- -> render CURRENT baseline + exact PROPOSED target revision + evidence
- -> human VERIFIED / REJECTED / AMENDED
-```
-
-Verification means the proposal revision is verified; it does not promote it into CURRENT baseline.
-
-## Requirement edit subprocess
-
-Human Edit and AI proposal use one path:
-
-```text
-[edit proposed Requirement]
- -> authorize
- -> compare expected/current subject Requirement revision
- -> append RequirementRevision
- -> update proposed Requirement
- -> persist RequirementSource
- -> invalidate old revision verification/acceptance/evals for readiness
- -> re-run relevant baseline/active-proposal matching
- -> evaluate pinned profile
+edit
+ -> authorize + revision check
+ -> append RequirementRevision / RequirementSource
+ -> old verification/acceptance/evals become stale for readiness
+ -> re-run relevant requirement matching
+ -> evaluate profile
+ -> if semantics/capabilities changed and architecture is required:
+      re-run targeted architecture impact analysis
  -> reassess conflicts/gaps
- -> append DomainEvent
+ -> event
 ```
 
-No catalogue mutation occurs.
+No current baseline is mutated.
 
 ## N-party conflict subprocess
 
-```text
-[Conflict detected]
- -> persist 2+ positions
- -> positions may reference CURRENT baseline, subject proposal,
-    another active subject proposal or knowledge source
- -> participant-specific tasks
- -> independent AgentThreads capture evidence/position
- -> shared Conflict Workspace aggregates
- -> AI neutral summary/options
- -> named human Decision/source correction
- -> resolve + reassess changes/readiness
-```
-
-## Knowledge impact subprocess
-
-```text
-[CURRENT KnowledgeReference version/fingerprint]
- -> ProposedDiff ADD/MODIFY/REMOVE/DEPRECATE/UNKNOWN_CHANGE
- -> human confirm/reject/correct
- -> if source changes: STALE_BASELINE -> reassess
-```
-
-No external write-back in P0.
+Conflicts may reference current baselines, proposed requirements, other Delivery Subjects, knowledge or architecture impact positions. Participants use independent AgentThreads; named human records Decision/source correction.
 
 ## Work-package subprocess
 
 ```text
-[converged change proposals]
- -> identify implementation areas
- -> create targeted WorkPackages
- -> attach proposed Requirement IDs/change refs
+[Converged proposed changes]
+ -> create WorkPackage grouping
+ -> attach Requirement IDs/change refs
+ -> link CONFIRMED architecture impacts
+ -> create WorkPackageImplementationTarget
+ -> include repository/team only if normalized topology supports the link
  -> dependencies
- -> package-level acceptance/evals
+ -> package acceptance/evals
 ```
 
 ## Readiness subprocess
 
 Blocking checks include:
 
-- problem/outcome;
-- published Requirement Profile pinned;
-- no blocking OPEN profile finding;
-- all active proposed Requirements have change proposals;
-- no stale requirement baseline;
-- no blocking UNREVIEWED RequirementMatch;
-- required perspectives confirmed/owned;
-- current proposal revision verified/provenanced;
-- no blocking gap/conflict/assumption/dependency/task;
-- required impacts/work-package targets/acceptance/evals.
+- outcome/profile/profile findings;
+- explicit requirement change classification;
+- stale requirement baseline/unreviewed collisions;
+- required perspectives/verification/provenance;
+- no blocking gaps/conflicts/assumptions/dependencies/tasks;
+- current acceptance/evals;
+- when architecture policy requires it:
+  - architecture baseline pinned/current;
+  - no stale architecture impacts/change proposals;
+  - confirmed current-revision impacts for HIGH/CRITICAL requirements;
+  - trusted/reviewed topology behind confirmed impact when configured;
+  - concrete implementation target when configured.
 
 Any failed blocker -> NOT_READY. Score is informational.
 
 ## OpenCode recovery/context subprocess
 
 ```text
-[Task processing]
+Task processing
  -> acquire thread lease
- -> resolve/recreate OpenCode session
- -> FULL hydrate when new/stale subject context
- -> include pinned profile
- -> include CURRENT baseline exact versions
- -> include PROPOSED changes/matches/findings
+ -> resolve/recreate session
+ -> FULL hydrate when subject context stale
+ -> include profile + exact CURRENT requirement/knowledge baselines
+ -> include architecture baseline identity + bounded relevant topology
+ -> include PROPOSED requirements/knowledge/architecture state
  -> run OpenCode
- -> record subject revision actually presented
- -> before mutation re-read target + baseline/source versions
+ -> before mutation re-read all relevant baseline versions
  -> validate/apply commands
  -> persist domainRevisionAtEnd separately
  -> release lease
@@ -325,4 +356,4 @@ DRAFT -> DISCOVERING -> DRILLING -> RESOLVING -> SPLITTING -> READY -> HANDED_OF
                          +-------------+
 ```
 
-`HANDED_OFF` means change set delivered downstream. Current Requirement Catalogue / external knowledge remain unchanged until an explicit future reconciliation process after delivery.
+`HANDED_OFF` means change set delivered downstream. Requirement Catalogue, external knowledge and architecture Git remain unchanged until explicit future reconciliation after delivery.
