@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ArchitectureBaselineSchema,
   ArchitectureChangeProposalSchema,
+  ArchitectureImpactAssessmentSchema,
   RequirementArchitectureImpactSchema,
   RequirementProfileArchitecturePolicySchema,
 } from "../src/domain/architecture.js";
@@ -16,6 +17,7 @@ describe("architecture schema invariants", () => {
       profileVersion: 8,
       requireArchitectureBaseline: false,
       requireConfirmedImpactForHighCritical: true,
+      requireCompleteImpactAssessmentForHighCritical: false,
       requireImplementationTargetForHighCritical: false,
       allowNeedsReviewElementsForImpact: false,
       createdAt: now,
@@ -31,9 +33,49 @@ describe("architecture schema invariants", () => {
       profileVersion: 8,
       requireArchitectureBaseline: true,
       requireConfirmedImpactForHighCritical: false,
+      requireCompleteImpactAssessmentForHighCritical: false,
       requireImplementationTargetForHighCritical: true,
       allowNeedsReviewElementsForImpact: false,
       createdAt: now,
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("requires a traversal policy when complete impact coverage is required", () => {
+    const parsed = RequirementProfileArchitecturePolicySchema.safeParse({
+      id: "policy",
+      profileId: "api-change",
+      profileVersion: 8,
+      requireArchitectureBaseline: true,
+      requireConfirmedImpactForHighCritical: true,
+      requireCompleteImpactAssessmentForHighCritical: true,
+      requireImplementationTargetForHighCritical: false,
+      allowNeedsReviewElementsForImpact: false,
+      createdAt: now,
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("does not allow a COMPLETE impact assessment with unresolved candidates", () => {
+    const parsed = ArchitectureImpactAssessmentSchema.safeParse({
+      id: "assessment",
+      deliverySubjectId: "ds",
+      requirementId: "r1",
+      requirementRevision: 2,
+      architectureBaselineId: "ab",
+      architectureBaselineVersion: 3,
+      traversalPolicyId: "api-impact",
+      traversalPolicyVersion: 1,
+      seedElementKeys: ["cap.customer"],
+      candidateElementKeys: ["app.api", "app.mobile"],
+      assessedElementKeys: ["app.api"],
+      unresolvedElementKeys: ["app.mobile"],
+      traversalRelationshipIds: [],
+      status: "COMPLETE",
+      createdAt: now,
+      updatedAt: now,
     });
 
     expect(parsed.success).toBe(false);
