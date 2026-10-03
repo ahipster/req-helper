@@ -2,7 +2,7 @@
 
 ## Goal
 
-Several users must be able to work on the same Delivery Subject simultaneously without sharing one agent session or overwriting each other's authoritative contributions.
+Several authorized users must work on the same Delivery Subject simultaneously without sharing one agent session, losing human input, leaking cross-subject data, or silently overwriting authoritative state.
 
 ## Collaboration model
 
@@ -16,107 +16,156 @@ Delivery Subject DS-123
 
 All threads converge through Firestore domain records.
 
-## What users share
+## Access model
 
-Users share live views of:
-- Delivery Subject summary/status;
-- relevant requirements;
-- perspective coverage;
-- tasks and assignments;
-- gaps/conflicts/decisions;
+Realtime subject data is not globally visible to every authenticated user.
+
+A user can read subject data when:
+
+- they have active DeliverySubjectMembership, or
+- they are ADMIN under PoC policy.
+
+Membership answers access; PerspectiveAssignment answers authority. Global DELIVERY_LEAD capability does not grant access to all subjects.
+
+## My Work across subjects
+
+Do not use a browser collection-group query across authoritative `tasks` collections. Firestore rules are not post-query filters, so a cross-subject query is awkward to reconcile safely with per-subject membership.
+
+Instead the backend maintains:
+
+```text
+users/{uid}/taskInbox/{itemId}
+```
+
+This is a non-authoritative projection containing only My Work display/routing metadata.
+
+Lifecycle rules:
+
+- Task create/assignment/status change updates the projection;
+- reassignment removes the old assignee item and writes the new one;
+- subject membership removal/deactivation deletes that subject's projected items for the user;
+- browser can read only its own projection;
+- opening an item reloads/re-authorizes authoritative subject/task state;
+- projection may be rebuilt from authoritative tasks.
+
+## What authorized users share
+
+Depending on role/screen:
+
+- Delivery Subject summary/scope/status;
+- perspectives and authority coverage;
+- relevant requirements/revisions/provenance/verifications;
+- tasks;
+- gaps/assumptions/conflicts/decisions;
 - enterprise impacts;
+- work packages/dependencies;
 - readiness;
 - recent domain activity.
 
-They do not need to share one chat transcript.
+They do not share one chat transcript by default.
 
-## What remains private/isolated by default
+## Thread isolation
 
-Each drill thread has its own:
-- participant;
-- perspective context;
-- current task;
-- conversation history;
-- OpenCode session ID;
-- run lease.
-
-A user may explicitly open the bigger picture or other perspectives, subject to authorization.
+Each interaction thread has its own participant, perspective context, current task, user-visible conversation history, OpenCode session ID/generation, Firestore run lease and `contextRevisionPresented`.
 
 ## Realtime behavior
 
-When a validated mutation is committed to Firestore, relevant listeners update automatically.
-
-Example:
-
 ```text
 Alice answers Architecture task
-  -> API persists answer
-  -> OpenCode extracts contribution
-  -> Requirement R-17 is revised
-  -> Firestore transaction commits revision + event
-  -> Bob's UI sees changed requirement
-  -> Bob's agent can receive a new follow-up task if Business is affected
+ -> human answer persists; Task ANSWERED
+ -> Task PROCESSING + taskInbox projection updated
+ -> OpenCode proposes Requirement revision
+ -> validated Firestore transaction commits revision/source/event
+ -> Bob's listener receives R-17 rev 4
+ -> Alice's My Work projection reflects new Task state
+ -> Bob's unsent chat draft remains untouched
+ -> if Business is affected, Bob receives a new authoritative Task + inbox item
 ```
+
+A remote state update updates structured context without silently replacing local unsent input.
 
 ## Concurrency rules
 
-### Different threads
+### Different AgentThreads
 
 May execute concurrently.
 
-### Same thread
+### Same AgentThread
 
-Only one active harness run. Firestore lease prevents duplicate concurrent prompts.
+One active harness run. Firestore lease serializes prompts.
 
 ### Same domain object
 
-AI-generated commands that depend on a previous revision include an expected revision/idempotency key. The application re-reads current state before commit.
+Concurrent proposals may exist, but every semantic command includes revision/idempotency constraints.
 
-If stale:
-- reject and recompute, or
-- require human resolution if semantic conflict exists.
+Before commit:
 
-Do not blindly last-write-wins important requirements/decisions.
+1. re-read authoritative state;
+2. compare target/domain revision;
+3. reject/recompute stale proposals;
+4. if competing human positions are incompatible, preserve them and create/reopen Conflict.
+
+Important requirements/decisions never use blind last-write-wins.
+
+## Task concurrency and user feedback
+
+```text
+OPEN -> IN_PROGRESS -> ANSWERED -> PROCESSING -> COMPLETED
+                     \-> WAITING_ON_OTHER -> IN_PROGRESS
+```
+
+The UI distinguishes answer saved, agent processing, waiting for another participant and completed. AgentRun status remains separate.
+
+## Requirement edits while another user is viewing/editing
+
+If a structured object changes remotely while another user has an edit form open:
+
+- do not silently overwrite;
+- show current remote revision vs user's base revision;
+- allow refresh/reapply/cancel;
+- backend rejects stale semantic writes unless explicitly reconciled.
+
+Normal users can inspect Requirement History to understand changes.
+
+## N-party conflict collaboration
+
+When users provide incompatible positions:
+
+1. preserve each Contribution/Evidence;
+2. persist Conflict with 2+ structured positions;
+3. create participant-specific tasks;
+4. participants answer in independent AgentThreads;
+5. Conflict Workspace aggregates positions/evidence live;
+6. AI may neutrally summarize/options-frame;
+7. named human decision owner records Decision or source correction;
+8. affected requirements are reassessed.
+
+The Conflict Workspace is a shared view, not a shared OpenCode session.
+
+## Authority during collaboration
+
+- OWNER/DELEGATE may authoritatively verify their assigned perspective.
+- CONTRIBUTOR input is useful but non-authoritative until verified.
+- REVIEWER may comment/challenge/recommend only.
+- WAR_ROOM_OPERATOR may diagnose/rerun but cannot alter assignments unless also ADMIN or subject Delivery Lead.
 
 ## Presence
 
-Presence indicators are optional P1. They are not required for correctness.
-
-If implemented, presence is ephemeral UI metadata such as:
-- Alice is viewing Architecture;
-- Bob is answering Business task;
-- Cara's agent run is processing.
-
-Presence must not determine ownership/readiness.
+Optional P1 only. Presence is ephemeral UX metadata and never affects ownership/readiness.
 
 ## Notifications
 
-P0: in-app task inbox and live badges/counts.
+P0: private in-app taskInbox projection and live badges/counts.
 
-Future:
-- email/Teams/Slack notifications;
-- reminders/escalation;
-- owner SLA tracking.
+Future: email/Teams/Slack reminders/escalation.
 
-## Authorization
-
-Realtime does not mean globally visible.
-
-PoC may use broad authenticated read access for selected testers, but production should enforce Delivery Subject/team membership and sensitive-perspective policies. The server remains authoritative for mutations even if browsers have direct realtime read access.
-
-## Conflict between human inputs
-
-If two humans provide incompatible knowledge, preserve both contributions and create/refresh a Conflict object. Do not let an LLM silently choose one.
-
-Formal ownership influences who can verify/decide, but does not erase useful non-owner contributions.
-
-## UI expectations
-
-Every screen should tolerate live changes while open.
+## Reconnect/offline behavior
 
 At minimum:
-- use stable document IDs;
-- render updated state without resetting the current chat input;
-- show small "updated by X" / recent-activity cues where useful;
-- when an item being edited changes remotely, surface that fact rather than silently overwriting;
-- reconnect Firestore listeners after transient network loss.
+
+- reconnect Firestore listeners after transient network loss;
+- show stale/offline indicator where needed;
+- do not claim a mutation succeeded until backend confirms authoritative commit;
+- preserve local draft text during reconnect;
+- re-read current object revision before submitting a structured edit after reconnect;
+- treat taskInbox as disposable/read-only and reload authoritative state on navigation.

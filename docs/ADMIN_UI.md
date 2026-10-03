@@ -2,21 +2,18 @@
 
 ## Purpose
 
-Req Helper needs a small configuration surface so a PoC operator can set up participants, global application roles, perspective templates, and Delivery Subject assignments without editing Firestore manually.
+Req Helper needs a small configuration surface for PoC users, global application roles, perspective templates and Delivery Subject setup. This is not a full enterprise IAM product.
 
-This is deliberately not a full enterprise IAM product.
+The model deliberately separates four concepts:
 
-The model separates:
+1. global application capability;
+2. Delivery Subject membership/access;
+3. expertise hints;
+4. per-perspective authority.
 
-1. **Global application roles** — what a user may do in Req Helper itself.
-2. **Perspective expertise hints** — which perspectives a user is commonly associated with.
-3. **Delivery Subject assignments** — what that user is authoritative for on one specific Delivery Subject.
+Do not infer authority from job title, system role, expertise hint or mere subject membership.
 
-Do not infer authority from job title or global role.
-
-## Global application roles
-
-P0 roles:
+## 1. Global application roles
 
 ```text
 ADMIN
@@ -25,18 +22,40 @@ DELIVERY_LEAD
 WAR_ROOM_OPERATOR
 ```
 
-Meaning:
+- `ADMIN`: manage users/templates and administer PoC configuration.
+- `PARTICIPANT`: participate in assigned work.
+- `DELIVERY_LEAD`: capability to lead Delivery Subjects, but does not grant access to every Delivery Subject.
+- `WAR_ROOM_OPERATOR`: inspect/retry/diagnose agent runs, but does not grant assignment-management authority.
 
-- `ADMIN`: manage users, role templates, perspective catalogue and PoC configuration.
-- `PARTICIPANT`: participate in assigned drills/reviews.
-- `DELIVERY_LEAD`: create Delivery Subjects and manage assignments/readiness workflow.
-- `WAR_ROOM_OPERATOR`: inspect agent traces, rerun analysis, classify failures and manage harness diagnostics.
+Users may have multiple system roles.
 
-A user may have multiple global roles.
+## 2. Delivery Subject membership
 
-## Delivery Subject assignment roles
+Membership determines access to one Delivery Subject:
 
-These remain separate from global roles:
+```text
+SPONSOR
+DELIVERY_LEAD
+PARTICIPANT
+OBSERVER
+```
+
+Example:
+
+```text
+Alice
+  global roles: PARTICIPANT, DELIVERY_LEAD
+
+DS-123 membership: DELIVERY_LEAD
+DS-456 membership: OBSERVER
+DS-789: no membership -> no access
+```
+
+Global `DELIVERY_LEAD` means Alice is allowed to be configured as a subject lead; DS-123 membership establishes that she actually leads DS-123.
+
+## 3. Perspective authority
+
+Within a Delivery Subject:
 
 ```text
 OWNER
@@ -45,26 +64,17 @@ CONTRIBUTOR
 REVIEWER
 ```
 
-Example:
+- OWNER/DELEGATE: authoritative verification rights for that perspective.
+- CONTRIBUTOR: knowledge contribution only.
+- REVIEWER: advisory challenge/comment/recommendation only.
 
-```text
-Alice
-  global roles: PARTICIPANT
-  expertise hints: ARCHITECTURE, API
+Reviewer is never treated as authoritative merely because of a global role.
 
-DS-123
-  Architecture -> OWNER
-  API          -> CONTRIBUTOR
+## 4. Expertise hints
 
-DS-456
-  Architecture -> REVIEWER
-```
+`expertisePerspectiveTypes` is suggestion metadata only. It helps find likely participants and may influence AI routing suggestions. It never creates membership or assignment.
 
-This allows the same person to play different roles on different deliveries.
-
-## Firestore collections
-
-Add root collections:
+## 5. Firestore root collections
 
 ```text
 users/{userId}
@@ -72,218 +82,169 @@ roleTemplates/{roleTemplateId}
 perspectiveTemplates/{perspectiveTemplateId}
 ```
 
-### User profile
+Membership and assignments live under each Delivery Subject:
 
-```ts
-{
-  id: string,
-  displayName: string,
-  email?: string,
-  active: boolean,
-  systemRoles: ("ADMIN" | "PARTICIPANT" | "DELIVERY_LEAD" | "WAR_ROOM_OPERATOR")[],
-  expertisePerspectiveTypes: string[],
-  title?: string,
-  team?: string,
-  createdAt: Timestamp,
-  updatedAt: Timestamp
-}
+```text
+deliverySubjects/{subjectId}/members/{userId}
+deliverySubjects/{subjectId}/assignments/{assignmentId}
 ```
 
-### Role template
+## 6. Admin Overview
 
-Role templates are convenience bundles only. They are not authoritative Delivery Subject ownership.
-
-```ts
-{
-  id: string,
-  name: string,
-  description?: string,
-  systemRoles: string[],
-  suggestedPerspectiveTypes: string[],
-  active: boolean
-}
+```text
+┌───────────────────────────────────────────────────────────────┐
+│ Req Helper / Admin                                           │
+├───────────────────────────────────────────────────────────────┤
+│ Users                 14 active                              │
+│ Role templates         6                                     │
+│ Perspective templates 11                                     │
+│ Subjects missing owner 2                                     │
+│                                                               │
+│ [Users] [Roles] [Perspectives] [Ownership gaps]              │
+└───────────────────────────────────────────────────────────────┘
 ```
 
-Examples:
+## 7. Users
+
+```text
+User       Global capabilities               Expertise       Status
+Alice      PARTICIPANT, DELIVERY_LEAD         Arch, API       Active
+Bob        PARTICIPANT                        Business        Active
+Dana       WAR_ROOM_OPERATOR, PARTICIPANT     Security        Active
+```
+
+## 8. User Detail
+
+```text
+Name       Alice Example
+Email      alice@example.bank
+Title      Solution Architect
+Team       Customer Platform
+
+Global roles
+[x] PARTICIPANT
+[x] DELIVERY_LEAD
+[ ] WAR_ROOM_OPERATOR
+[ ] ADMIN
+
+Expertise hints
+[x] ARCHITECTURE [x] API [x] INTEGRATION [ ] DATA
+
+[Save] [Deactivate]
+```
+
+Deactivation preserves historical references. It prevents new work/assignments until reactivated.
+
+## 9. Role Templates
+
+Role templates are convenience bundles for system roles + expertise suggestions. They are never subject membership or authority.
 
 ```text
 Architect
-  systemRoles: PARTICIPANT
-  perspectives: ARCHITECTURE, API, INTEGRATION
+  global: PARTICIPANT
+  suggested expertise: ARCHITECTURE, API, INTEGRATION
 
 Product Owner
-  systemRoles: PARTICIPANT
-  perspectives: BUSINESS, PROCESS
+  global: PARTICIPANT
+  suggested expertise: BUSINESS, PROCESS
 
 War-room Operator
-  systemRoles: WAR_ROOM_OPERATOR, PARTICIPANT
+  global: WAR_ROOM_OPERATOR, PARTICIPANT
+  authority implied: none
 ```
 
-### Perspective template
+## 10. Perspective Catalogue
 
-```ts
-{
-  id: string,
-  type: string,
-  name: string,
-  description?: string,
-  defaultCriticality?: string,
-  active: boolean,
-  defaultPromptSkill?: string
-}
-```
+Admins can configure active perspective templates, descriptions, default criticality and default prompt skill.
 
-## Admin screens
+Template changes do not silently alter historical Delivery Subject perspectives; subjects keep the snapshot/config actually used unless explicitly updated.
 
-### 1. Admin overview
+## 11. Delivery Subject Members
+
+Subject Delivery Lead/Admin manages access:
 
 ```text
-┌──────────────────────────────────────────────────────────────────────┐
-│ Req Helper / Admin                                                  │
-├──────────────────────────────────────────────────────────────────────┤
-│ Users                  14 active                                    │
-│ Role templates          6                                           │
-│ Perspective templates  11                                           │
-│                                                                      │
-│ [Manage users] [Manage roles] [Manage perspectives]                 │
-└──────────────────────────────────────────────────────────────────────┘
+Customer onboarding / Members
+
+Bob      SPONSOR, PARTICIPANT
+Alice    DELIVERY_LEAD, PARTICIPANT
+Cara     PARTICIPANT
+Erik     PARTICIPANT
+Mia      OBSERVER
+
+[Add member] [Change role] [Remove access]
 ```
 
-### 2. Users
+Removing access does not delete historical contributions/events.
+
+## 12. Perspective Assignments
 
 ```text
-┌──────────────────────────────────────────────────────────────────────┐
-│ Users                                                   [+ Add user] │
-├───────────────┬─────────────────────┬────────────────┬───────────────┤
-│ User          │ Global roles        │ Expertise      │ Status        │
-├───────────────┼─────────────────────┼────────────────┼───────────────┤
-│ Alice         │ PARTICIPANT         │ Arch, API      │ Active        │
-│ Bob           │ DELIVERY_LEAD       │ Business       │ Active        │
-│ Cara          │ PARTICIPANT         │ Data           │ Active        │
-│ Dana          │ WAR_ROOM_OPERATOR   │ Security       │ Active        │
-└───────────────┴─────────────────────┴────────────────┴───────────────┘
+Perspective    Person     Relation       Effect
+Business       Bob        OWNER          authoritative
+Architecture   Alice      OWNER          authoritative
+Data           Cara       DELEGATE       authoritative
+Security       Dana       REVIEWER       advisory only
+Security       —          —              NEEDS OWNER/DELEGATE
 ```
 
-### 3. User detail
+Suggested experts may be shown, but the subject Delivery Lead confirms the assignment.
 
-```text
-┌──────────────────────────────────────────────────────────────────────┐
-│ Alice Example                                                       │
-├──────────────────────────────────────────────────────────────────────┤
-│ Name       [Alice Example                    ]                      │
-│ Email      [alice@example.bank               ]                      │
-│ Title      [Solution Architect               ]                      │
-│ Team       [Customer Platform                ]                      │
-│                                                                      │
-│ Global roles                                                        │
-│ [x] PARTICIPANT                                                     │
-│ [ ] DELIVERY_LEAD                                                   │
-│ [ ] WAR_ROOM_OPERATOR                                               │
-│ [ ] ADMIN                                                           │
-│                                                                      │
-│ Expertise hints                                                     │
-│ [x] ARCHITECTURE [x] API [x] INTEGRATION [ ] DATA                  │
-│                                                                      │
-│ [Save] [Deactivate]                                                 │
-└──────────────────────────────────────────────────────────────────────┘
-```
+## 13. Permission matrix for P0
 
-### 4. Role templates
+### ADMIN
 
-```text
-┌──────────────────────────────────────────────────────────────────────┐
-│ Role templates                                          [+ New]      │
-├──────────────────────────────────────────────────────────────────────┤
-│ Architect                                                           │
-│ PARTICIPANT · Architecture, API, Integration              [Edit]     │
-│                                                                      │
-│ Product Owner                                                       │
-│ PARTICIPANT · Business, Process                           [Edit]     │
-│                                                                      │
-│ War-room Operator                                                   │
-│ WAR_ROOM_OPERATOR · no authority implied                  [Edit]     │
-└──────────────────────────────────────────────────────────────────────┘
-```
+- manage users/templates;
+- view/administer all PoC subjects where policy permits;
+- manage membership/assignments;
+- use War Room diagnostics if also authorized by deployment policy.
 
-### 5. Perspective catalogue
+### Subject DELIVERY_LEAD
 
-```text
-┌──────────────────────────────────────────────────────────────────────┐
-│ Perspective catalogue                                  [+ Add]       │
-├──────────────────────────────────────────────────────────────────────┤
-│ Business       active · default criticality HIGH          [Edit]    │
-│ Process        active · default criticality MEDIUM        [Edit]    │
-│ Data           active · default criticality HIGH          [Edit]    │
-│ Architecture   active · default criticality HIGH          [Edit]    │
-│ Security       active · default criticality HIGH          [Edit]    │
-│ Operations     active · default criticality MEDIUM        [Edit]    │
-└──────────────────────────────────────────────────────────────────────┘
-```
+- manage that subject's membership;
+- confirm perspectives;
+- manage assignments;
+- reassign tasks;
+- record/route decisions;
+- reopen discovery/resolution.
 
-## Delivery Subject assignment UI
+### WAR_ROOM_OPERATOR
 
-The Delivery Lead must be able to assign humans after the AI proposes perspectives.
+- inspect/rerun/classify harness activity for subjects they may access;
+- **cannot** alter membership/assignments unless they also hold ADMIN or subject DELIVERY_LEAD.
 
-```text
-┌──────────────────────────────────────────────────────────────────────┐
-│ Assign perspectives · Customer onboarding change                    │
-├────────────────┬─────────────────────┬─────────────┬─────────────────┤
-│ Perspective    │ Person              │ Relation    │ Status          │
-├────────────────┼─────────────────────┼─────────────┼─────────────────┤
-│ Business       │ Bob                 │ OWNER       │ ✓               │
-│ Architecture   │ Alice               │ OWNER       │ ✓               │
-│ Data           │ Cara                │ OWNER       │ ✓               │
-│ Security       │ —                   │ —           │ NEEDS OWNER     │
-│ Operations     │ Erik                │ REVIEWER    │ Needs OWNER     │
-└────────────────┴─────────────────────┴─────────────┴─────────────────┘
-│ Suggested experts for Security: Dana, Sofia                         │
-│                                                      [Save]          │
-└──────────────────────────────────────────────────────────────────────┘
-```
+### OWNER/DELEGATE
 
-Expertise hints may influence suggestions, but the Delivery Lead confirms the actual assignment.
+- authoritative verification for assigned perspective;
+- no automatic admin/membership-management permission.
 
-## Authorization rules
+### REVIEWER
 
-P0 authorization should remain simple:
+- comment/challenge/recommend;
+- cannot satisfy authoritative verification solely as Reviewer.
 
-- all authenticated PoC testers may read Delivery Subjects they are allowed to access;
-- only backend application services mutate authoritative domain state;
-- `ADMIN` is required for `/admin/*` mutation endpoints;
-- `DELIVERY_LEAD` or `ADMIN` may manage Delivery Subject assignments;
-- `WAR_ROOM_OPERATOR` or `ADMIN` may rerun/diagnose agent runs;
-- `OWNER`/`DELEGATE` assignment controls authoritative verification for that perspective;
-- `CONTRIBUTOR` and `REVIEWER` never become authoritative merely because of their global role.
-
-For the PoC, permission checks live in backend application services. Firestore Security Rules remain a defense-in-depth boundary for browser reads.
-
-## User stories
+## 14. User stories
 
 ### Admin
 
-- I can add/activate/deactivate a user.
-- I can assign global application roles.
-- I can record perspective expertise hints.
-- I can create/edit role templates.
-- I can configure the perspective catalogue.
-- I can see which Delivery Subjects currently lack required owners.
+- Add/activate/deactivate users.
+- Assign global application roles.
+- Record expertise hints.
+- Maintain role/perspective templates.
+- See Delivery Subjects missing required authority.
 
 ### Delivery Lead
 
-- I can assign OWNER/DELEGATE/CONTRIBUTOR/REVIEWER per perspective.
-- I can use expertise hints to find candidates.
-- I can override AI-suggested participants.
-- I can see when a required perspective lacks an accountable OWNER/DELEGATE.
+- Add/remove subject members.
+- Assign subject roles.
+- Assign OWNER/DELEGATE/CONTRIBUTOR/REVIEWER per perspective.
+- Find candidate experts using hints.
+- See required perspectives lacking OWNER/DELEGATE.
 
-## P0 boundary
+### War-room Operator
 
-Do not implement:
+- Diagnose/rerun agent activity without accidentally obtaining governance authority.
 
-- HR directory synchronization;
-- SCIM provisioning;
-- complex nested groups;
-- attribute-based policy language;
-- enterprise-grade delegated administration;
-- automatic authority inference from job title.
+## 15. P0 boundary
 
-Those are future integrations. The one-week PoC only needs enough configuration to run several people through the workflow without editing raw database documents.
+Do not implement HR directory sync, SCIM, nested groups, delegated-admin hierarchies, ABAC policy language or automatic job-title authority inference. Those are future identity integrations.

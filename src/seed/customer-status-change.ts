@@ -10,6 +10,7 @@ import type {
   Requirement,
   RequirementSource,
   Task,
+  Verification,
   WorkPackage,
 } from "../domain/schemas.js";
 import type {
@@ -41,11 +42,16 @@ export const deliverySubject: DeliverySubject = {
     "Downstream channels cannot reliably determine whether customer verification has completed and therefore fall back to manual handling.",
   desiredOutcome:
     "Authorized downstream channels can consume an agreed verification state with defined semantics, failure behavior and operational controls.",
+  scopeIn: ["verification-state semantics", "supported downstream distribution", "failure behavior"],
+  scopeOut: ["implementation and deployment"],
+  constraints: ["existing enterprise security and integration policy remains authoritative"],
+  successMeasures: ["downstream teams receive a verified implementation-ready requirement package"],
   status: "DRILLING",
   priority: "HIGH",
   sponsorId: personas.sponsor.id,
   deliveryLeadId: personas.architect.id,
   currentIteration: 1,
+  revision: 7,
   createdAt: now,
   updatedAt: now,
 };
@@ -59,17 +65,21 @@ export const perspectives: Perspective[] = [
     criticality: "HIGH",
     required: true,
     status: "IN_PROGRESS",
-    rationale: "Clarify when channels may proceed automatically and what verified means operationally.",
+    rationale: "Clarify when channels may proceed automatically.",
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: "p-data",
     deliverySubjectId: deliverySubject.id,
     type: "DATA",
-    name: "Customer verification semantics and source of truth",
+    name: "Verification semantics and source of truth",
     criticality: "CRITICAL",
     required: true,
     status: "IN_PROGRESS",
     rationale: "Status meaning, ownership and lineage must be authoritative.",
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: "p-architecture",
@@ -80,6 +90,8 @@ export const perspectives: Perspective[] = [
     required: true,
     status: "IN_PROGRESS",
     rationale: "Change crosses MDM, API and channel boundaries.",
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: "p-security",
@@ -90,6 +102,8 @@ export const perspectives: Perspective[] = [
     required: true,
     status: "CONFIRMED",
     rationale: "New consumers will see customer verification information.",
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: "p-operations",
@@ -100,6 +114,8 @@ export const perspectives: Perspective[] = [
     required: true,
     status: "CONFIRMED",
     rationale: "Downstream automation depends on runtime behavior.",
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: "p-api",
@@ -110,17 +126,19 @@ export const perspectives: Perspective[] = [
     required: true,
     status: "IN_PROGRESS",
     rationale: "A current API is the likely distribution point.",
+    createdAt: now,
+    updatedAt: now,
   },
 ];
 
 export const assignments: PerspectiveAssignment[] = [
-  { id: "a-business", perspectiveId: "p-business", userId: personas.product.id, relationship: "OWNER", required: true, status: "ACTIVE" },
-  { id: "a-data", perspectiveId: "p-data", userId: personas.data.id, relationship: "OWNER", required: true, status: "ACTIVE" },
-  { id: "a-arch", perspectiveId: "p-architecture", userId: personas.architect.id, relationship: "OWNER", required: true, status: "ACTIVE" },
-  { id: "a-security", perspectiveId: "p-security", userId: personas.security.id, relationship: "OWNER", required: true, status: "ACTIVE" },
-  { id: "a-ops", perspectiveId: "p-operations", userId: personas.operations.id, relationship: "OWNER", required: true, status: "ACTIVE" },
-  { id: "a-api", perspectiveId: "p-api", userId: personas.api.id, relationship: "OWNER", required: true, status: "ACTIVE" },
-  { id: "a-arch-data-contrib", perspectiveId: "p-data", userId: personas.architect.id, relationship: "CONTRIBUTOR", required: false, status: "ACTIVE" },
+  { id: "a-business", perspectiveId: "p-business", userId: personas.product.id, relationship: "OWNER", status: "ACTIVE", createdAt: now, updatedAt: now },
+  { id: "a-data", perspectiveId: "p-data", userId: personas.data.id, relationship: "OWNER", status: "ACTIVE", createdAt: now, updatedAt: now },
+  { id: "a-arch", perspectiveId: "p-architecture", userId: personas.architect.id, relationship: "OWNER", status: "ACTIVE", createdAt: now, updatedAt: now },
+  { id: "a-security", perspectiveId: "p-security", userId: personas.security.id, relationship: "OWNER", status: "ACTIVE", createdAt: now, updatedAt: now },
+  { id: "a-ops", perspectiveId: "p-operations", userId: personas.operations.id, relationship: "OWNER", status: "ACTIVE", createdAt: now, updatedAt: now },
+  { id: "a-api", perspectiveId: "p-api", userId: personas.api.id, relationship: "OWNER", status: "ACTIVE", createdAt: now, updatedAt: now },
+  { id: "a-arch-data-contrib", perspectiveId: "p-data", userId: personas.architect.id, relationship: "CONTRIBUTOR", status: "ACTIVE", createdAt: now, updatedAt: now },
 ];
 
 export const requirements: Requirement[] = [
@@ -143,9 +161,9 @@ export const requirements: Requirement[] = [
   {
     id: "r-api-exposure",
     deliverySubjectId: deliverySubject.id,
-    type: "API",
+    type: "INTEGRATION",
     title: "Expose verification state",
-    statement: "Authorized downstream channels shall be able to obtain the customer verification state through the supported customer integration contract.",
+    statement: "Authorized downstream channels shall be able to obtain the customer verification state through a supported integration contract.",
     priority: "HIGH",
     criticality: "HIGH",
     status: "DRAFT",
@@ -159,18 +177,28 @@ export const requirements: Requirement[] = [
 
 export const requirementSources: RequirementSource[] = [
   {
+    id: "rs-verification-state-concept",
+    deliverySubjectId: deliverySubject.id,
     requirementId: "r-verification-state",
+    requirementRevision: 1,
     sourceKind: "KNOWLEDGE_REFERENCE",
     sourceId: "k-customer-concept",
     authoritative: true,
+    createdAt: now,
   },
   {
+    id: "rs-api-inference",
+    deliverySubjectId: deliverySubject.id,
     requirementId: "r-api-exposure",
+    requirementRevision: 1,
     sourceKind: "AI_INFERENCE",
     sourceId: "inference-initial-impact",
     authoritative: false,
+    createdAt: now,
   },
 ];
+
+export const verifications: Verification[] = [];
 
 export const gaps: Gap[] = [
   {
@@ -182,6 +210,8 @@ export const gaps: Gap[] = [
     requiredOwnerId: personas.operations.id,
     blocking: true,
     status: "OPEN",
+    createdAt: now,
+    updatedAt: now,
   },
 ];
 
@@ -189,15 +219,19 @@ export const conflicts: Conflict[] = [
   {
     id: "conflict-sync-async",
     deliverySubjectId: deliverySubject.id,
-    description: "Business expects immediate response while current architecture guidance prefers asynchronous propagation and the source can respond slowly.",
-    itemAType: "REQUIREMENT",
-    itemAId: "r-api-exposure",
-    itemBType: "KNOWLEDGE_REFERENCE",
-    itemBId: "k-integration-guideline",
+    description: "Business expects immediate response while architecture prefers asynchronous propagation and operations notes slow-tail behavior.",
+    positions: [
+      { id: "pos-business", actorId: personas.product.id, perspectiveId: "p-business", itemType: "REQUIREMENT", itemId: "r-api-exposure", summary: "The business expects immediate confirmation.", evidenceIds: [] },
+      { id: "pos-architecture", actorId: personas.architect.id, perspectiveId: "p-architecture", itemType: "KNOWLEDGE_REFERENCE", itemId: "k-integration-guideline", summary: "Cross-domain status propagation should normally be asynchronous.", evidenceIds: [] },
+      { id: "pos-operations", actorId: personas.operations.id, perspectiveId: "p-operations", itemType: "KNOWLEDGE_REFERENCE", itemId: "k-customer-mdm-slo", summary: "The source can have degraded tail latency up to three seconds.", evidenceIds: [] },
+    ],
     severity: "HIGH",
     ownerIds: [personas.product.id, personas.architect.id, personas.operations.id],
+    decisionOwnerId: personas.product.id,
     blocking: true,
     status: "OPEN",
+    createdAt: now,
+    updatedAt: now,
   },
 ];
 
@@ -207,10 +241,14 @@ export const assumptions: Assumption[] = [
     deliverySubjectId: deliverySubject.id,
     statement: "The existing Customer API is the correct distribution point for all target channels.",
     ownerId: personas.architect.id,
-    confidence: 0.6,
+    statedConfidence: 0.6,
+    criticality: "HIGH",
+    blocking: false,
     validationMethod: "Confirm target consumers and integration constraints during architecture/API drill.",
     impactIfWrong: "May require events or a separate service instead of API-only exposure.",
     status: "OPEN",
+    createdAt: now,
+    updatedAt: now,
   },
 ];
 
@@ -232,6 +270,8 @@ export const tasks: Task[] = [
     blocking: true,
     status: "OPEN",
     relatedObjectIds: ["r-verification-state", "k-customer-concept"],
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: "task-ops-failure",
@@ -246,6 +286,8 @@ export const tasks: Task[] = [
     blocking: true,
     status: "OPEN",
     relatedObjectIds: ["gap-failure-behavior", "r-api-exposure"],
+    createdAt: now,
+    updatedAt: now,
   },
 ];
 

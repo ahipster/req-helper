@@ -5,96 +5,107 @@
 ```text
 Browser
   -> Cloud Run: Req Helper Next.js/API
-       -> Firestore
+       -> Firestore (authoritative structured state)
+       -> GCS (uploaded source files, if enabled)
        -> OpenCode service/SDK
             -> Vertex AI / Model Garden
 ```
 
-## GCP services
+## Minimum GCP services
 
-Minimum:
 - Cloud Run;
 - Cloud Firestore;
 - Vertex AI;
 - Artifact Registry;
-- Secret Manager only where non-ADC secrets are unavoidable;
-- Identity Platform/Firebase Auth or existing enterprise identity integration.
+- Identity Platform/Firebase Auth or enterprise identity;
+- GCS only if file upload is enabled;
+- Secret Manager only for unavoidable non-ADC secrets.
 
-## Authentication
+## Authentication and service identity
 
-Prefer Application Default Credentials / workload identity.
+Prefer Application Default Credentials/workload identity.
 
-The Req Helper Cloud Run service account needs only the permissions required to:
-- read/write its Firestore database;
+Req Helper service identity receives only what it needs to:
+
+- read/write Firestore;
+- access the configured GCS bucket when uploads are enabled;
 - invoke approved Vertex models indirectly/directly as configured;
-- access explicitly approved enterprise integrations.
+- access explicit enterprise integrations.
 
-Do not put service-account JSON keys into the image or repository.
+Do not commit or bake service-account JSON keys into images.
 
-OpenCode's Vertex provider can resolve project/location from its config or environment variables such as:
+OpenCode Vertex configuration can use runtime project/location, e.g.:
 
 ```text
 GOOGLE_CLOUD_PROJECT
 GOOGLE_VERTEX_LOCATION
 ```
 
-On GCP, rely on the runtime service identity rather than local credential files.
+## OpenCode deployment
 
-## OpenCode deployment choices
+### Separate internal service — preferred PoC shape
 
-### A. Separate internal service — preferred PoC shape
+Run OpenCode as an internal service and connect via `@opencode-ai/sdk`.
 
-Run OpenCode as an internal service and connect with `createOpencodeClient`.
+Benefits:
 
-Advantages:
-- clean process isolation;
-- restart independently;
-- simple Req Helper adapter;
+- process isolation;
+- independent restart;
+- simpler adapter boundary;
 - easier war-room inspection.
 
-Caveat:
-OpenCode local session persistence must be treated as disposable. Req Helper stores the logical AgentThread and authoritative context in Firestore and recreates missing OpenCode sessions.
+OpenCode local session persistence is disposable. Req Helper stores logical thread/session-generation metadata and authoritative context in Firestore.
 
-### B. Embedded SDK
+### Embedded process
 
-Start/host OpenCode from the Req Helper backend process.
+Acceptable for the PoC if operationally simpler, but lifecycle is more coupled and Cloud Run churn makes session state more ephemeral.
 
-Advantages:
-- less network plumbing.
-
-Trade-offs:
-- lifecycle/process ownership is more coupled;
-- Cloud Run instance churn makes local OpenCode state even more obviously temporary.
-
-Either approach must satisfy the same invariant: loss of OpenCode state cannot lose product/domain state.
+Both options must satisfy the same recovery tests.
 
 ## Cloud Run scaling
 
-Req Helper can scale horizontally because durable state lives in Firestore.
+Req Helper can scale horizontally because correctness lives in Firestore.
 
-AgentThread leases prevent two backend instances from concurrently prompting the same logical thread.
+- AgentThread Firestore lease serializes one logical thread.
+- Different AgentThreads may run concurrently.
+- Never rely on in-memory locks for correctness.
 
-Separate threads may run concurrently.
+## Firestore location
 
-Do not depend on in-memory locks for correctness.
+Choose an approved location before database creation according to bank/data-residency policy. The repository does not prescribe a compliance region.
 
-## Firestore locality
+Vertex location likewise follows approved model availability/policy. Example configs are not compliance decisions.
 
-Choose a Firestore database location consistent with bank/data-residency requirements before creating the database; changing database location later is not a normal in-place operation.
+## Source artifact storage
 
-Choose Vertex model regions according to model availability and policy. `opencode.json.example` uses `europe-west4` only as an example, not as a compliance decision.
+If uploads are enabled:
+
+```text
+Browser -> signed/backend upload flow -> GCS
+                              |
+                              +-> Firestore SourceArtifact(metadata + URI/hash)
+```
+
+Do not place large source document bytes in Firestore.
+
+For PoC simplicity, link-only `SourceArtifact` records are acceptable if file upload setup would threaten the one-week vertical slice.
 
 ## Realtime browser access
 
-Browser SDK:
-- authenticate user;
-- open narrow Firestore listeners for authorized shared state;
-- use the Cloud Run API for authoritative mutations.
+Browser:
 
-Server SDK:
-- Firebase Admin / Google Cloud credentials;
-- domain transactions and audit writes;
-- OpenCode invocation and validated AI command application.
+- authenticate;
+- read only subjects where active membership exists (or admin policy allows);
+- subscribe narrowly;
+- use Cloud Run API for authoritative mutations.
+
+Server:
+
+- Admin SDK/service identity;
+- membership + capability + perspective-authority checks;
+- Firestore transactions/audit;
+- OpenCode invocation;
+- GCS access where applicable.
 
 ## Required environment variables
 
@@ -109,21 +120,26 @@ OPENCODE_MODEL_ID=...
 NEXT_PUBLIC_FIREBASE_API_KEY=...
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
+REQ_HELPER_SOURCE_BUCKET=...   # only if uploads enabled
 ```
 
-Firebase web configuration values identify the Firebase project; authorization must come from identity + Firestore Security Rules, not from treating these values as secrets.
+Firebase web configuration identifies the Firebase project; it is not an authorization mechanism.
 
 ## PoC deployment verification
 
 Before war-room week verify:
 
-1. two authenticated browsers can watch the same Delivery Subject;
-2. browser A mutation through API is visible to browser B without refresh;
-3. two different AgentThreads can run concurrently;
-4. same AgentThread cannot run twice concurrently;
-5. killing/restarting OpenCode causes session recreation, not data loss;
-6. killing/restarting Cloud Run causes no Delivery Subject data loss;
-7. Vertex calls use the expected project/model/region;
-8. Firestore Security Rules deny direct browser domain writes;
-9. audit events identify human vs AI/system actor;
-10. final export can be reconstructed solely from Firestore domain state.
+1. two **authorized members** can observe the same subject live;
+2. a signed-in non-member cannot read that subject;
+3. browser direct authoritative writes are denied;
+4. API mutation by user A is visible to authorized user B without refresh;
+5. two different AgentThreads run concurrently;
+6. same AgentThread cannot run twice concurrently;
+7. OpenCode restart/session deletion causes session recreation + FULL hydration, not data loss;
+8. `contextRevisionPresented` remains the actual presented revision, not same-run `domainRevisionAtEnd`;
+9. Cloud Run restart causes no product-state loss;
+10. Vertex calls use the expected project/model/location;
+11. human answer persists if model/provider fails after submit;
+12. uploaded source bytes (if enabled) are in GCS while Firestore holds only metadata;
+13. audit events identify human vs AI/system actor;
+14. final package/read API reconstructs solely from authoritative persisted domain state.

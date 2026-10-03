@@ -1,128 +1,70 @@
 # Firestore Model
 
-## Purpose
-
-Cloud Firestore is the authoritative shared state store for the Req Helper PoC. It must support:
-
-- several logged-in users working on the same Delivery Subject;
-- realtime UI updates;
-- independent perspective/participant agent threads;
-- deterministic readiness and auditability;
-- safe reruns and concurrent AI activity;
-- admin-managed PoC users/role templates/perspective templates;
-- recovery from stale or lost OpenCode local sessions.
-
-Do not model the Delivery Subject as one giant JSON document.
+Cloud Firestore is the authoritative shared state store for the Req Helper PoC. This document defines the canonical persistence shape. It must stay aligned with `src/domain/schemas.ts` and `docs/DOMAIN_MODEL.md`.
 
 ## Root collections
 
 ```text
-deliverySubjects/{subjectId}
 users/{userId}
+  /taskInbox/{itemId}               # read-only My Work projection
 roleTemplates/{roleTemplateId}
 perspectiveTemplates/{perspectiveTemplateId}
+deliverySubjects/{subjectId}
 ```
 
-`users`, `roleTemplates`, and `perspectiveTemplates` are global PoC configuration. Delivery Subject authority still comes from explicit assignment documents under each Delivery Subject.
+The task inbox is a disposable read projection. The authoritative Task always remains under its Delivery Subject.
 
-See `docs/ADMIN_UI.md` for the role semantics.
+## Delivery Subject root
 
-## User profile
+`deliverySubjects/{subjectId}` stores bounded aggregate summary/state only:
 
 ```ts
 {
-  id: string,
-  displayName: string,
-  email?: string,
-  active: boolean,
-  systemRoles: ("ADMIN" | "PARTICIPANT" | "DELIVERY_LEAD" | "WAR_ROOM_OPERATOR")[],
-  expertisePerspectiveTypes: string[],
-  title?: string,
-  team?: string,
-  createdAt: Timestamp,
-  updatedAt: Timestamp
+  id,
+  title,
+  initialSignal,
+  problemStatement?,
+  desiredOutcome?,
+  scopeIn: string[],
+  scopeOut: string[],
+  constraints: string[],
+  successMeasures: string[],
+  status,
+  priority?,
+  sponsorId?,
+  deliveryLeadId?,
+  currentIteration,
+  revision,
+  readinessState,
+  readinessScore?,
+  summaryCounts?,
+  createdAt,
+  updatedAt
 }
 ```
 
-Expertise hints help routing/suggestions. They are not authority.
+`revision` increments on material domain mutation and is the basis for stale-agent detection.
 
-## Role template
-
-```ts
-{
-  id: string,
-  name: string,
-  description?: string,
-  systemRoles: string[],
-  suggestedPerspectiveTypes: string[],
-  active: boolean
-}
-```
-
-Role templates are convenience configuration only.
-
-## Perspective template
-
-```ts
-{
-  id: string,
-  type: string,
-  name: string,
-  description?: string,
-  defaultCriticality?: string,
-  active: boolean,
-  defaultPromptSkill?: string
-}
-```
-
-## Delivery Subject
-
-`deliverySubjects/{subjectId}`
-
-Bounded summary fields only:
-
-```ts
-{
-  id: string,
-  title: string,
-  initialSignal: string,
-  problemStatement?: string,
-  desiredOutcome?: string,
-  status: "DRAFT" | "DISCOVERING" | "DRILLING" | "RESOLVING" | "SPLITTING" | "READY" | "HANDED_OFF" | "CANCELLED",
-  priority?: string,
-  sponsorId?: string,
-  deliveryLeadId?: string,
-  revision: number,
-  readinessState: "UNKNOWN" | "NOT_READY" | "READY",
-  readinessScore?: number,
-  summaryCounts?: {
-    requirements: number,
-    blockingGaps: number,
-    blockingConflicts: number,
-    openTasks: number
-  },
-  createdAt: Timestamp,
-  updatedAt: Timestamp
-}
-```
-
-`revision` increments when a material domain mutation is committed. Agent commands carry the revision they were built against where stale-state detection matters.
-
-## Subcollections
+## Delivery Subject subcollections
 
 ```text
+deliverySubjects/{subjectId}/members/{userId}
+deliverySubjects/{subjectId}/sourceArtifacts/{artifactId}
 deliverySubjects/{subjectId}/perspectives/{perspectiveId}
 deliverySubjects/{subjectId}/assignments/{assignmentId}
 deliverySubjects/{subjectId}/tasks/{taskId}
 deliverySubjects/{subjectId}/contributions/{contributionId}
+deliverySubjects/{subjectId}/evidence/{evidenceId}
+deliverySubjects/{subjectId}/verifications/{verificationId}
+deliverySubjects/{subjectId}/knowledgeRefs/{referenceId}
+deliverySubjects/{subjectId}/proposedDiffs/{diffId}
 deliverySubjects/{subjectId}/requirements/{requirementId}
 deliverySubjects/{subjectId}/requirementRevisions/{revisionId}
+deliverySubjects/{subjectId}/requirementSources/{sourceLinkId}
 deliverySubjects/{subjectId}/gaps/{gapId}
 deliverySubjects/{subjectId}/conflicts/{conflictId}
 deliverySubjects/{subjectId}/assumptions/{assumptionId}
 deliverySubjects/{subjectId}/decisions/{decisionId}
-deliverySubjects/{subjectId}/knowledgeRefs/{referenceId}
-deliverySubjects/{subjectId}/impacts/{impactId}
 deliverySubjects/{subjectId}/workPackages/{workPackageId}
 deliverySubjects/{subjectId}/acceptanceCriteria/{criterionId}
 deliverySubjects/{subjectId}/evaluations/{evaluationId}
@@ -133,353 +75,419 @@ deliverySubjects/{subjectId}/agentThreads/{threadId}
 deliverySubjects/{subjectId}/agentRuns/{runId}
 ```
 
-Use IDs/references to connect documents instead of large nested arrays.
+Use references/stable IDs rather than large nested objects or unbounded arrays.
 
-## Perspective
+## Membership
 
-```ts
-{
-  id: string,
-  type: string,
-  name: string,
-  description?: string,
-  criticality: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
-  required: boolean,
-  rationale?: string,
-  status: "PROPOSED" | "CONFIRMED" | "ACTIVE" | "COMPLETE" | "BLOCKED",
-  updatedAt: Timestamp
-}
-```
-
-## Assignment
+`members/{userId}` answers whether a user can access a Delivery Subject and their broad subject role.
 
 ```ts
 {
-  id: string,
-  perspectiveId: string,
-  userId: string,
-  relationship: "OWNER" | "DELEGATE" | "CONTRIBUTOR" | "REVIEWER",
-  required: boolean,
-  status: "ACTIVE" | "COMPLETE" | "REMOVED",
-  createdAt: Timestamp
+  id,
+  deliverySubjectId,
+  userId,
+  roles: ["SPONSOR" | "DELIVERY_LEAD" | "PARTICIPANT" | "OBSERVER"],
+  active,
+  createdAt,
+  updatedAt
 }
 ```
 
-Assignment is the authoritative statement about a person's relationship to a perspective for this Delivery Subject. Global roles/templates cannot substitute for it.
+Global `DELIVERY_LEAD` capability does not grant access to every subject. Subject membership establishes actual participation in a specific Delivery Subject.
 
-## Task
+## My Work task-inbox projection
 
-Tasks represent durable human waits; no suspended workflow engine is required.
+A browser-wide collection-group Task query conflicts with strict subject-membership rules because Firestore security rules are not post-query filters. P0 therefore maintains:
+
+```text
+users/{userId}/taskInbox/{itemId}
+```
+
+Projection shape:
 
 ```ts
 {
-  id: string,
-  perspectiveId?: string,
-  assigneeId?: string,
-  type: "DRILL" | "VERIFY" | "RESOLVE_CONFLICT" | "DECIDE" | "REVIEW" | "FOLLOW_UP",
-  title: string,
-  question?: string,
-  rationale?: string,
-  relatedObjectIds: string[],
-  blocking: boolean,
-  status: "OPEN" | "IN_PROGRESS" | "ANSWERED" | "CANCELLED",
-  createdAt: Timestamp,
-  updatedAt: Timestamp
+  id,
+  userId,
+  deliverySubjectId,
+  taskId,
+  subjectTitle,
+  perspectiveId?,
+  type,
+  title,
+  blocking,
+  status,
+  updatedAt
 }
 ```
 
-Keep `relatedObjectIds` bounded. If relationship fan-out becomes large, add a separate relation collection later.
+Rules:
+
+- authoritative Task remains `deliverySubjects/{subjectId}/tasks/{taskId}`;
+- backend services update/remove the projection when assignment/status changes;
+- reassigning a task removes the old assignee projection and creates/updates the new one;
+- removing/deactivating subject membership removes that subject's inbox projections for the user as part of the same application operation/batch;
+- the projection may be rebuilt from authoritative tasks;
+- user may read only their own task inbox (ADMIN may read under PoC policy);
+- opening an inbox item reloads the authoritative Task/subject and re-checks access;
+- no browser writes.
+
+## Perspective and Assignment
+
+Perspective status is canonical:
+
+```text
+PROPOSED | CONFIRMED | IN_PROGRESS | COMPLETE | BLOCKED
+```
+
+Assignment relationship:
+
+```text
+OWNER | DELEGATE | CONTRIBUTOR | REVIEWER
+```
+
+Do not store `required` on Assignment. Requiredness belongs to Perspective.
+
+## SourceArtifact
+
+Links or uploaded material are represented by metadata only:
+
+```ts
+{
+  id,
+  name,
+  mediaType?,
+  storageType: "LINK" | "GCS" | "EXTERNAL",
+  uri,
+  sizeBytes?,
+  sha256?,
+  addedBy,
+  createdAt
+}
+```
+
+Large file bytes do not belong in Firestore.
 
 ## Contribution
 
 ```ts
 {
-  id: string,
-  taskId?: string,
-  authorId: string,
-  perspectiveId?: string,
-  statement: string,
-  epistemicMode: "KNOW" | "BELIEVE" | "OBSERVED" | "UNKNOWN" | "UNSPECIFIED",
-  confidence?: number,
+  id,
+  taskId?,
+  authorId,
+  perspectiveId?,
+  statement,
+  epistemicMode,
+  ownershipRelationship?,
+  statedConfidence?,
+  extractionConfidence?,
   evidenceIds: string[],
-  likelyAuthoritativeOwnerId?: string,
-  verificationStatus: "UNVERIFIED" | "OWNER_VERIFIED" | "OWNER_REJECTED" | "SUPERSEDED",
-  createdAt: Timestamp
+  likelyAuthoritativeOwnerId?,
+  createdAt
 }
 ```
+
+Confidence is never authority.
+
+## Evidence
+
+Evidence has its own collection so contribution/requirement/conflict records do not point to undefined IDs.
+
+```ts
+{
+  id,
+  kind,
+  sourceId,
+  excerpt?,
+  uri?,
+  createdAt
+}
+```
+
+## Verification
+
+Verification is append-only human judgment and revision-bound where applicable.
+
+Targets:
+
+```text
+CONTRIBUTION        -> no target revision
+REQUIREMENT         -> targetRevision required
+PROPOSED_DIFF       -> targetRevision required
+```
+
+Common fields:
+
+```ts
+{
+  id,
+  targetType,
+  targetId,
+  verifierId,
+  perspectiveId?,
+  verdict: "VERIFIED" | "REJECTED" | "AMENDED",
+  rationale?,
+  status: "ACTIVE" | "SUPERSEDED",
+  createdAt
+}
+```
+
+When a Requirement revision changes, prior Verification records remain for audit but do not satisfy readiness for the new revision.
+
+## KnowledgeReference and ProposedDiff
+
+Store external source metadata rather than source content. Proposed diffs are separate records keyed to a KnowledgeReference and have their own revision/timestamps.
 
 ## Requirement
 
-Current authoritative representation:
+Current state:
 
 ```ts
 {
-  id: string,
-  type: string,
-  title: string,
-  statement: string,
-  rationale?: string,
-  ownerId?: string,
-  criticality: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL",
-  status: "DRAFT" | "NEEDS_INPUT" | "PROPOSED" | "VERIFIED" | "CONFLICTED" | "APPROVED" | "SUPERSEDED",
-  sourceContributionIds: string[],
-  sourceKnowledgeReferenceIds: string[],
-  currentRevision: number,
-  workPackageIds: string[],
-  updatedAt: Timestamp
+  id,
+  type,
+  title,
+  statement,
+  rationale?,
+  priority,
+  criticality,
+  status: "DRAFT" | "NEEDS_INPUT" | "PROPOSED" | "CONFLICTED" | "SUPERSEDED",
+  ownerId?,
+  extractionConfidence?,
+  requiresEvaluation,
+  revision,
+  createdAt,
+  updatedAt
 }
 ```
 
-Every material change also creates an immutable `requirementRevisions` document containing the previous/new statement and provenance.
+Verification is deliberately not encoded in Requirement status.
 
-If any ID array begins to grow materially, replace it with dedicated relation documents. PoC arrays must stay intentionally bounded.
+Meaning:
 
-## Conflict / gap / assumption / decision
+- `priority`: delivery urgency/sequencing;
+- `criticality`: consequence if wrong/omitted.
 
-These are first-class records. They must not live only in chat text.
+### RequirementRevision
 
-Each includes:
-- stable ID;
-- status;
-- severity/criticality where applicable;
-- owner(s);
-- related object IDs;
-- blocking flag where applicable;
-- created/updated timestamps;
-- resolution/decision rationale when closed.
+Every semantic human or AI edit appends an immutable revision record. Manual edit and AI edit use the same code path.
 
-## Knowledge reference
+### RequirementSource
 
-Store metadata, not the entire enterprise repository object:
+Provenance is first-class:
 
 ```ts
 {
-  id: string,
-  sourceSystem: string,
-  sourceType: string,
-  externalId?: string,
-  uri?: string,
-  title: string,
-  version?: string,
-  summary?: string,
-  retrievedAt: Timestamp,
-  relevance?: number
+  id,
+  requirementId,
+  requirementRevision,
+  sourceKind,
+  sourceId,
+  authoritative,
+  createdAt
 }
 ```
 
-Large documents stay in their source system/object storage and are fetched on demand.
+Do not rely on embedded source arrays for canonical provenance.
 
-## AgentThread
+## Conflict
 
-Logical interaction continuity independent of OpenCode server lifetime.
+A conflict supports two or more positions:
 
-Default ID can be deterministic from:
+```ts
+{
+  id,
+  description,
+  positions: [{
+    id,
+    actorId?,
+    perspectiveId?,
+    itemType,
+    itemId,
+    summary,
+    evidenceIds: []
+  }],
+  severity,
+  ownerIds,
+  decisionOwnerId?,
+  blocking,
+  resolution?,
+  decisionId?,
+  status,
+  createdAt,
+  updatedAt
+}
+```
+
+Keep `positions` bounded; if war-room usage proves it can grow materially, split into a subcollection later.
+
+## Assumption
+
+Assumptions include `criticality` and `blocking`, making readiness semantics explicit.
+
+## Task
+
+Canonical task types:
 
 ```text
-subjectId + perspectiveId + participantId
+DRILL | VERIFY | REVIEW | RESOLVE_CONFLICT | FILL_GAP |
+DECIDE | FOLLOW_UP | FINAL_REVIEW
 ```
 
-Document:
+Canonical statuses:
+
+```text
+OPEN | IN_PROGRESS | ANSWERED | PROCESSING |
+WAITING_ON_OTHER | COMPLETED | CANCELLED
+```
+
+`ANSWERED` means human input is saved. `PROCESSING` means AI/application logic is interpreting it. `COMPLETED` means resulting structured changes/follow-ups are durable.
+
+## WorkPackage
 
 ```ts
 {
-  id: string,
-  perspectiveId?: string,
-  participantId: string,
-  opencodeSessionId?: string,
-  sessionGeneration: number,
-  status: "IDLE" | "RUNNING" | "ERROR" | "CLOSED",
-  leaseOwner?: string,
-  leaseExpiresAt?: Timestamp,
-  lastContextRevision?: number,
-  lastMessageAt?: Timestamp,
-  lastRunId?: string,
-  createdAt: Timestamp,
-  updatedAt: Timestamp
+  id,
+  name,
+  targetAreaRef,
+  targetTeamId?,
+  coordinatorId?,
+  status,
+  requirementIds: [],
+  dependencyIds: [],
+  knowledgeReferenceIds: [],
+  createdAt,
+  updatedAt
 }
 ```
 
-The OpenCode session ID is an optimization. If it becomes invalid, create another session, increment `sessionGeneration`, and full-hydrate from authoritative Firestore context.
+`targetAreaRef` is required. A human coordinator is not a substitute for implementation-area identity.
 
-`lastContextRevision` records the Delivery Subject revision last injected as authoritative current state into the thread. Before each meaningful run, compare it with the current Delivery Subject `revision` and refresh context if they differ.
+## AcceptanceCriterion and Evaluation
 
-See `docs/OPENCODE_STATE_SYNC.md`.
+Both use generalized target types:
 
-## AgentRun
-
-```ts
-{
-  id: string,
-  threadId: string,
-  opencodeSessionId?: string,
-  sessionGeneration: number,
-  perspectiveId?: string,
-  participantId: string,
-  domainRevisionAtStart: number,
-  lastContextRevisionBefore?: number,
-  hydrationMode: "FULL" | "DELTA" | "MINIMAL",
-  domainRevisionAtEnd?: number,
-  provider?: string,
-  model?: string,
-  skillVersions: string[],
-  inputObjectIds: string[],
-  toolCalls: unknown[],
-  structuredOutput?: unknown,
-  proposedCommands?: unknown[],
-  appliedCommandIds?: string[],
-  rejectedCommands?: unknown[],
-  status: "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED" | "ABANDONED",
-  errorCategory?: string,
-  startedAt: Timestamp,
-  endedAt?: Timestamp
-}
+```text
+REQUIREMENT      -> targetRevision required
+WORK_PACKAGE     -> no requirement revision
+DELIVERY_SUBJECT -> no requirement revision
 ```
 
-Do not persist private model chain-of-thought.
+This allows integration/package-level acceptance instead of forcing every check onto a single requirement.
+
+## Dependency semantics
+
+`blocking=true` means the dependency must be resolved before READY. Ownership alone does not make it acceptable.
 
 ## Messages
 
-Messages are interaction history and can be used to reconstruct user-visible threads, but they are not authoritative requirements.
+User-visible conversation continuity is stored in `messages`. Messages are not authoritative requirements.
+
+## AgentThread
 
 ```ts
 {
-  id: string,
-  threadId: string,
-  runId?: string,
-  actorType: "HUMAN" | "ASSISTANT" | "SYSTEM" | "TOOL",
-  actorId?: string,
-  content: string,
-  relatedObjectIds?: string[],
-  createdAt: Timestamp
+  id,
+  perspectiveId?,
+  participantId,
+  opencodeSessionId?,
+  sessionGeneration,
+  status,
+  leaseOwner?,
+  leaseExpiresAt?,
+  contextRevisionPresented?,
+  lastRunId?,
+  lastMessageAt?,
+  createdAt,
+  updatedAt
 }
 ```
 
-Persist user-visible human/assistant messages in Firestore so the UI can reconstruct conversation continuity even if OpenCode local state disappears.
+`contextRevisionPresented` means the highest Delivery Subject revision whose authoritative context was actually presented to the OpenCode session.
 
-## Events
+Do not set it to `domainRevisionAtEnd` merely because the same run caused mutations. Those mutations have not necessarily been presented back to the session yet.
 
-Append-only audit records:
+## AgentRun
 
-```ts
-{
-  id: string,
-  type: string,
-  actorType: "HUMAN" | "AI" | "SYSTEM",
-  actorId?: string,
-  objectType: string,
-  objectId: string,
-  summary: string,
-  runId?: string,
-  domainRevision: number,
-  createdAt: Timestamp
-}
+Persist enough to diagnose context staleness:
+
+```text
+runId
+threadId
+sessionGeneration
+opencodeSessionId
+participantId
+perspectiveId
+domainRevisionAtStart
+contextRevisionPresentedBefore
+contextRevisionPresentedThisRun
+hydrationMode = FULL | DELTA | MINIMAL
+inputObjectIds
+skill versions
+provider/model
+tool calls
+structured output
+proposed commands
+applied/rejected command IDs
+domainRevisionAtEnd
+status/error category
+startedAt/endedAt
 ```
 
-## Concurrency strategy
+Never persist private chain-of-thought.
+
+## Concurrency
 
 ### Human edits
 
-Use server-side transactions when the operation depends on current state. Increment the Delivery Subject `revision` in the same transaction for material changes.
+Use server-side transactions for invariant-sensitive writes and increment Delivery Subject revision atomically.
 
 ### AI commands
 
-Each proposed command includes:
+Every material command carries:
+
 - deterministic/idempotency key;
-- object IDs it affects;
-- expected domain/object revision when relevant;
+- target object IDs;
+- expected domain/object revision;
 - structured payload.
 
-Before applying:
-1. re-read the current object/revision;
-2. reject or recompute if the command is stale;
-3. verify the command has not already been applied;
-4. validate authorization/domain invariants;
-5. commit state + event atomically where feasible.
+Before commit, re-read current state. Reject/recompute stale commands rather than last-write-wins.
 
-### Thread lease
+### Same OpenCode thread
 
-Acquire AgentThread lease transactionally:
-- only when no unexpired lease exists;
-- set `status=RUNNING`, `leaseOwner`, `leaseExpiresAt`;
-- renew for long runs if necessary;
-- clear on completion;
-- expired leases are recoverable.
+Serialize using AgentThread lease.
 
-This prevents two prompts racing through the same OpenCode session.
+### Different threads
 
-## OpenCode synchronization rule
-
-There is no continuous replication of OpenCode local disk/database into Firestore.
-
-Req Helper persists product-level state as interactions occur:
-
-- user-visible messages;
-- run/tool metadata;
-- validated structured outputs;
-- applied/rejected domain commands;
-- domain events.
-
-At every meaningful run, current Firestore state is authoritative and is supplied through a bounded context envelope. If OpenCode conversation memory disagrees with current Firestore state, Firestore wins.
+May execute concurrently; domain revisions protect shared objects.
 
 ## Realtime subscriptions
 
-Use narrow queries.
+Subscribe narrowly.
 
-Examples:
+- My Work: `users/{currentUser}/taskInbox`, filtered by `status` as needed.
+- Delivery Overview: root summary + perspectives + blockers + recent events.
+- Drill Workspace: current task + thread messages + relevant requirements/conflicts.
+- Requirement detail: current requirement + revisions + sources + verifications + acceptance/evals.
+- Conflict workspace: conflict + related tasks/positions/decision.
+- War Room: recent AgentRuns/events/tasks.
 
-### My Work
-`tasks where assigneeId == currentUser AND status in OPEN/IN_PROGRESS`
+## Security/access
 
-### Delivery Overview
-- Delivery Subject document;
-- perspectives;
-- blocking gaps/conflicts;
-- recent events (limited).
+Browser reads of Delivery Subject data are restricted by active Delivery Subject membership (or ADMIN policy). Admin/global-template access is governed separately.
 
-### Drill Workspace
-- current task;
-- thread messages;
-- relevant requirements;
-- conflicts tied to current perspective.
+The task inbox projection is readable only by its owning user (and ADMIN under PoC policy), is not authoritative, and must be cleaned up when subject access is revoked.
 
-### Admin
-- users;
-- roleTemplates;
-- perspectiveTemplates.
+P0 authoritative writes remain backend-only. The browser never receives Firestore admin credentials or OpenCode/Vertex credentials.
 
-### War Room
-- recent agentRuns;
-- recent events;
-- open tasks;
-- subject readiness summary.
+## Data-size rules
 
-Do not subscribe to all messages/events/history for all users.
-
-## Indexing
-
-Start with the queries the UI actually uses. Expected composite indexes include:
-- tasks: `assigneeId + status + updatedAt`;
-- tasks: `perspectiveId + status + updatedAt`;
-- requirements: `status + criticality + updatedAt`;
-- conflicts: `blocking + status + updatedAt`;
-- agentRuns: `threadId + startedAt`;
-- events: `createdAt` descending.
-
-Keep `firestore.indexes.json` under source control.
-
-## Data-size boundaries
-
-- Never store full large enterprise documents or long generated reports in one Firestore document.
-- Keep summaries bounded and store references to source/object storage for large payloads.
-- Keep growing collections as subcollections, not nested arrays/maps in parent documents.
-- Keep high-cardinality relation lists out of single documents when they grow beyond PoC scale.
+- no full large enterprise documents in Firestore;
+- no long file blobs in Firestore;
+- no unbounded arrays on Delivery Subject root;
+- growing history lives in subcollections;
+- relations become first-class documents when they need lifecycle/provenance/queryability.
 
 ## When Firestore stops fitting
 
-Firestore is appropriate for this PoC and likely an initial limited-team rollout. Add a projection/secondary store later if you need:
-- complex cross-Delivery-Subject joins/reporting;
-- large-scale graph traversal;
-- heavy analytical SQL;
-- strict relational referential integrity across many aggregates.
-
-Do not pre-emptively add PostgreSQL before such a need appears.
+Add a projection/secondary store later only for demonstrated needs such as complex cross-subject analytics, heavy SQL, graph traversal or stricter relational reporting. Firestore remains appropriate for the collaborative operational PoC.

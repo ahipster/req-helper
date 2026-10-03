@@ -20,6 +20,87 @@ export const roleTemplatesCollection = (db: Firestore = firestore) => db.collect
 export const perspectiveTemplatesCollection = (db: Firestore = firestore) =>
   db.collection("perspectiveTemplates");
 
+/**
+ * Non-authoritative realtime projection used by My Work. The application
+ * service must upsert/delete these items whenever task assignment/status or
+ * Delivery Subject membership changes.
+ */
+export const userTaskInboxCollection = (
+  userId: string,
+  db: Firestore = firestore,
+) => usersCollection(db).doc(userId).collection("taskInbox");
+
+export const taskInboxItemRef = (
+  userId: string,
+  itemId: string,
+  db: Firestore = firestore,
+) => userTaskInboxCollection(userId, db).doc(itemId);
+
+export type TaskInboxProjectionInput = {
+  id: string;
+  userId: string;
+  deliverySubjectId: string;
+  taskId: string;
+  subjectTitle: string;
+  perspectiveId?: string;
+  type: string;
+  title: string;
+  blocking: boolean;
+  status: string;
+};
+
+/**
+ * Use from the same Firestore transaction that changes an authoritative Task
+ * whenever practical. The projection is never read back to make domain
+ * decisions.
+ */
+export function upsertTaskInboxItemInTransaction(
+  tx: Transaction,
+  item: TaskInboxProjectionInput,
+): void {
+  tx.set(
+    taskInboxItemRef(item.userId, item.id),
+    {
+      ...item,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+export function deleteTaskInboxItemInTransaction(
+  tx: Transaction,
+  userId: string,
+  itemId: string,
+): void {
+  tx.delete(taskInboxItemRef(userId, itemId));
+}
+
+/**
+ * Membership removal/deactivation must remove subject-specific inbox entries.
+ * PoC batches are intentionally bounded below Firestore's write-batch limit.
+ */
+export async function deleteSubjectTaskInboxItems(
+  userId: string,
+  subjectId: string,
+): Promise<number> {
+  let deleted = 0;
+
+  for (;;) {
+    const snapshot = await userTaskInboxCollection(userId)
+      .where("deliverySubjectId", "==", subjectId)
+      .limit(400)
+      .get();
+
+    if (snapshot.empty) return deleted;
+
+    const batch = firestore.batch();
+    for (const doc of snapshot.docs) batch.delete(doc.ref);
+    await batch.commit();
+    deleted += snapshot.size;
+  }
+}
+
 export const subjectRef = (db: Firestore, subjectId: string) =>
   db.collection("deliverySubjects").doc(subjectId);
 
@@ -27,18 +108,23 @@ export const subjectCollection = (
   db: Firestore,
   subjectId: string,
   name:
+    | "members"
+    | "sourceArtifacts"
     | "perspectives"
     | "assignments"
     | "tasks"
     | "contributions"
+    | "evidence"
+    | "verifications"
+    | "knowledgeRefs"
+    | "proposedDiffs"
     | "requirements"
     | "requirementRevisions"
+    | "requirementSources"
     | "gaps"
     | "conflicts"
     | "assumptions"
     | "decisions"
-    | "knowledgeRefs"
-    | "impacts"
     | "workPackages"
     | "acceptanceCriteria"
     | "evaluations"
@@ -59,10 +145,6 @@ export type AuditEventInput = {
   runId?: string;
 };
 
-/**
- * Runs a material subject mutation and increments the subject revision in the
- * same Firestore transaction. Domain services should build on this primitive.
- */
 export async function mutateSubject<T>(
   subjectId: string,
   mutate: (transaction: Transaction, currentRevision: number) => Promise<T>,
@@ -165,10 +247,6 @@ export type UpdateThreadSessionInput = {
   sessionGeneration: number;
 };
 
-/**
- * Persists the recoverable OpenCode session mapping. This does not make
- * OpenCode state authoritative; it is only a continuity optimization.
- */
 export async function updateThreadSession({
   subjectId,
   threadId,
@@ -186,16 +264,23 @@ export async function updateThreadSession({
   );
 }
 
-export async function markThreadContextSynced(
+/**
+ * Records only the highest Delivery Subject revision that was actually
+ * presented to the OpenCode session as authoritative context.
+ *
+ * Do not pass domainRevisionAtEnd unless those end-of-run mutations were also
+ * explicitly re-presented to the session after commit.
+ */
+export async function markThreadContextPresented(
   subjectId: string,
   threadId: string,
-  domainRevision: number,
+  contextRevisionPresented: number,
   runId: string,
 ): Promise<void> {
   const ref = subjectCollection(firestore, subjectId, "agentThreads").doc(threadId);
   await ref.set(
     {
-      lastContextRevision: domainRevision,
+      contextRevisionPresented,
       lastRunId: runId,
       updatedAt: FieldValue.serverTimestamp(),
     },
@@ -213,10 +298,6 @@ export type PersistMessageInput = {
   relatedObjectIds?: string[];
 };
 
-/**
- * User-visible message history is persisted in Firestore so it survives loss
- * of OpenCode local session state. Messages are not authoritative requirements.
- */
 export async function persistThreadMessage(input: PersistMessageInput): Promise<string> {
   const ref = subjectCollection(firestore, input.subjectId, "messages").doc();
   await ref.create({

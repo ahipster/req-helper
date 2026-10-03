@@ -25,8 +25,8 @@ export type HarnessMetadata = {
   logicalThreadId: string;
   runId: string;
   skillVersion: string;
-  domainRevision: number;
-  lastContextRevision?: number;
+  domainRevisionAtStart: number;
+  contextRevisionPresentedBefore?: number;
   hydrationMode: HydrationMode;
 };
 

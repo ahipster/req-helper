@@ -1,10 +1,9 @@
 {
   "indexes": [
     {
-      "collectionGroup": "tasks",
-      "queryScope": "COLLECTION_GROUP",
+      "collectionGroup": "taskInbox",
+      "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "assigneeId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "updatedAt", "order": "DESCENDING" }
       ]
@@ -25,6 +24,33 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "criticality", "order": "ASCENDING" },
         { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "requirementRevisions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "requirementId", "order": "ASCENDING" },
+        { "fieldPath": "revision", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "requirementSources",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "requirementId", "order": "ASCENDING" },
+        { "fieldPath": "requirementRevision", "order": "ASCENDING" },
+        { "fieldPath": "authoritative", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "verifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "targetType", "order": "ASCENDING" },
+        { "fieldPath": "targetId", "order": "ASCENDING" },
+        { "fieldPath": "targetRevision", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
       ]
     },
     {
