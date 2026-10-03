@@ -6,12 +6,12 @@ Req Helper is a modular monolith on Cloud Run with Firestore as the authoritativ
 
 The PoC separates:
 
-1. domain state — authoritative product/business state in Firestore;
+1. domain state — authoritative business/product state in Firestore;
 2. conversation state — user-visible messages in Firestore;
 3. harness state — disposable OpenCode session/execution state;
-4. UI subscription state — realtime browser snapshots.
+4. UI/read-model state — realtime browser snapshots and non-authoritative projections such as My Work.
 
-Only authoritative Firestore state determines readiness and final handoff.
+Only authoritative Firestore domain state determines readiness and final handoff.
 
 ## 2. GCP topology
 
@@ -32,7 +32,7 @@ Req Helper Cloud Run
         |                         |
         v                         v
 Cloud Firestore              OpenCodeHarness
-(authoritative)                   |
+(authoritative + read models)     |
         |                         v
         |                   Vertex AI / Model Garden
         v
@@ -49,7 +49,7 @@ Recommended:
 - Next.js + React + TypeScript;
 - assistant-ui for conversation/tool rendering;
 - shadcn/ui or equivalent primitives;
-- Firestore listeners for authorized shared state;
+- Firestore listeners for authorized shared state/read projections;
 - backend APIs for authoritative mutations.
 
 assistant-ui owns interaction rendering, not product state.
@@ -87,68 +87,58 @@ A global DELIVERY_LEAD role only means the user may lead subjects. Subject membe
 ## 5. Backend/domain modules
 
 ### DeliverySubjectModule
-
 Lifecycle, scope, constraints, success measures, aggregate revision.
 
 ### AccessModule
-
 Subject memberships, global capability checks and subject-scoped authorization.
 
 ### PerspectiveModule
-
 Perspective catalogue, confirmation, assignments and authority checks.
 
 ### SourceModule
-
 SourceArtifact metadata/GCS references, Evidence and enterprise source linkage.
 
 ### ContributionModule
-
 Human statements, epistemic mode and confidence semantics.
 
 ### RequirementModule
-
-Current Requirement, immutable RequirementRevision, RequirementSource and manual/AI edit path.
+Current Requirement, immutable RequirementRevision, RequirementSource and one manual/AI edit path.
 
 ### VerificationModule
-
-Immutable revision-bound human Verification and authorization of verifier authority.
+Append-only revision-bound human Verification and verifier-authority checks.
 
 ### ResolutionModule
-
 Gaps, assumptions, N-party conflicts, positions, decisions and follow-up tasks.
 
 ### KnowledgeModule
-
 KnowledgeReferences and ProposedDiffs.
 
 ### WorkPackageModule
-
 Target implementation area/team, dependencies, acceptance criteria and evals.
 
 ### ReadinessModule
-
 Pure/deterministic checks over canonical snapshots.
 
 ### AgentThreadModule
-
 OpenCode session mapping, lease, session generation and exact context revision actually presented.
 
 ### PackageModule
-
 JSON/Markdown export and read-only downstream package/work-package APIs.
 
-### AuditModule
+### InboxProjectionModule
+Maintains `users/{uid}/taskInbox` from authoritative tasks/membership so My Work can be realtime without weakening subject isolation.
 
+### AuditModule
 Append-only DomainEvents and AgentRun traces.
 
 ## 6. Firestore persistence shape
 
 See `docs/FIRESTORE_MODEL.md` for canonical details.
 
-Key subcollections:
-
 ```text
+users/{userId}
+  /taskInbox                  # non-authoritative read projection
+
 deliverySubjects/{subjectId}
   /members
   /sourceArtifacts
@@ -177,7 +167,9 @@ deliverySubjects/{subjectId}
   /agentRuns
 ```
 
-Growing data/history remains in subcollections. The Delivery Subject root is bounded summary/state.
+Growing data/history remains in subcollections. Delivery Subject root is bounded summary/state.
+
+The task inbox is never authoritative. Task create/reassign/status changes update the projection; subject-access removal deletes that subject's inbox items for the user.
 
 ## 7. Deterministic application workflow
 
@@ -188,12 +180,13 @@ create signal/source artifacts
  -> clarify problem/outcome/scope
  -> confirm subject membership + perspectives
  -> assign perspective humans
- -> create targeted tasks
+ -> create targeted tasks + task-inbox projections
  -> persist human answer
  -> task ANSWERED -> PROCESSING
  -> OpenCode extracts structured proposals
- -> validate/revision-check/idempotency-check
+ -> validate/authz/revision/idempotency checks
  -> persist contribution/evidence/requirement revision/source/verification/etc.
+ -> update authoritative Task + inbox projection
  -> create targeted follow-ups/conflicts as needed
  -> task COMPLETED or WAITING_ON_OTHER
  -> converge
@@ -213,9 +206,7 @@ OPEN -> IN_PROGRESS -> ANSWERED -> PROCESSING -> COMPLETED
 Any nonterminal -> CANCELLED
 ```
 
-AgentRun status is separate from Task status.
-
-A human answer is persisted before invoking OpenCode so provider/harness failures do not lose human work.
+AgentRun status is separate. Human answer is persisted before OpenCode invocation.
 
 ## 9. OpenCode harness boundary
 
@@ -240,13 +231,11 @@ Required behavior:
 
 ## 10. Context synchronization
 
-AgentThread stores `contextRevisionPresented`.
-
-Meaning:
+AgentThread stores `contextRevisionPresented`:
 
 > highest Delivery Subject revision whose authoritative state was actually presented to the current OpenCode session.
 
-Do not use a vague `lastContextRevision`, and never set this field to same-run `domainRevisionAtEnd` unless those mutations were explicitly presented back to the session.
+Never set it to same-run `domainRevisionAtEnd` unless that resulting state was explicitly presented back to the session.
 
 P0 hydration:
 
@@ -257,9 +246,9 @@ current == presented  -> MINIMAL
 current != presented  -> FULL
 ```
 
-True delta hydration is optional later.
+True DELTA hydration is optional later.
 
-ContextEnvelope includes current scope/task/perspective, relevant requirements + sources + active verifications, contributions, decisions/conflicts/gaps/assumptions, knowledge and recent events.
+ContextEnvelope includes current scope/task/perspective, relevant requirements/sources/active verifications, contributions, decisions/conflicts/gaps/assumptions, knowledge and recent events.
 
 ## 11. Requirement mutation path
 
@@ -269,14 +258,14 @@ A semantic edit:
 
 1. checks access/authority/current revision;
 2. appends RequirementRevision;
-3. increments current Requirement revision;
+3. increments Requirement revision;
 4. writes RequirementSource links;
-5. preserves old Verification for audit but makes it ineligible for the new revision;
-6. marks/reassesses revision-bound acceptance/evals;
+5. preserves prior Verification for audit but makes old revision ineligible;
+6. makes old requirement-targeted acceptance/evals ineligible;
 7. reassesses conflicts/gaps;
 8. appends DomainEvent.
 
-This prevents manual UI edits from bypassing provenance/readiness semantics.
+Requirement-targeted AcceptanceCriterion/Evaluation must always carry `targetRevision`.
 
 ## 12. Conflict orchestration
 
@@ -293,32 +282,28 @@ Conflict detected
  -> affected requirements are reassessed
 ```
 
-The shared conflict page is a shared **view**, not a shared OpenCode session.
+The shared conflict page is a shared view, not a shared OpenCode session.
 
 ## 13. Realtime collaboration
 
 Browsers subscribe narrowly:
 
-- My Work: user's tasks;
+- My Work: current user's private `users/{uid}/taskInbox` projection;
 - Overview: subject summary/perspectives/blockers/readiness;
 - Drill: current task/thread messages/relevant structured state;
 - Requirement detail: current requirement + history/provenance/verification/acceptance/evals;
 - Conflict workspace: conflict positions/tasks/decision;
 - War Room: recent AgentRuns/events/tasks.
 
-Remote updates must not erase unsent local chat drafts. Editing stale structured state must produce a revision warning rather than silent overwrite.
+Remote updates must not erase unsent local chat drafts. Editing stale structured state produces a revision warning rather than silent overwrite.
+
+Opening any task-inbox item reloads/re-authorizes authoritative subject/task state.
 
 ## 14. Browser authorization
 
-Firestore Security Rules enforce subject membership for subject reads. Admin/global-template reads are separate.
+Firestore Security Rules enforce active subject membership for subject reads. Admin/global-template reads are separate. A user reads only their own task-inbox projection (ADMIN may read under PoC policy).
 
-Authoritative writes go through Cloud Run backend application services using service identity. Backend services enforce:
-
-- membership;
-- system capability;
-- subject role;
-- perspective authority;
-- target revision/invariants.
+Authoritative writes go through Cloud Run backend services, which enforce membership, global capability, subject role, perspective authority and revision/invariants.
 
 War-room permission does not imply assignment-management permission.
 
@@ -335,13 +320,13 @@ New Signal may attach links/files.
 
 A WorkPackage has required `targetAreaRef`, optional target team and optional human coordinator.
 
-AcceptanceCriterion and Evaluation can target:
+AcceptanceCriterion/Evaluation target:
 
 ```text
 REQUIREMENT | WORK_PACKAGE | DELIVERY_SUBJECT
 ```
 
-Requirement-level checks may bind to a semantic requirement revision.
+For REQUIREMENT targets, `targetRevision` is mandatory. WorkPackage/DeliverySubject targets are not revision-bound in P0.
 
 ## 17. Dependency semantics
 
@@ -354,11 +339,11 @@ Readiness consumes canonical Firestore-backed snapshots and is deterministic.
 Notable invariants:
 
 - all required perspectives confirmed;
-- all required perspectives owned/delegated regardless of medium/high criticality;
-- current-revision human verification + authoritative provenance for high/critical requirements;
+- all required perspectives owned/delegated regardless of criticality;
+- current-revision authoritative human verification + provenance for HIGH/CRITICAL requirements;
 - unresolved blocking gap/conflict/assumption/dependency/task blocks;
-- targeted work packages;
-- current acceptance/evals.
+- populated work packages target a real implementation area;
+- current-revision acceptance/evals where required.
 
 ## 19. Downstream package boundary
 
