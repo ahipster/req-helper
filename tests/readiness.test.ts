@@ -12,6 +12,7 @@ import {
   requirementSources,
   requirements,
   tasks,
+  verifications,
   workPackages,
 } from "../src/seed/customer-status-change.js";
 
@@ -21,6 +22,7 @@ const seedSnapshot = (): ReadinessSnapshot => ({
   assignments,
   requirements,
   requirementSources,
+  verifications,
   gaps,
   conflicts,
   assumptions,
@@ -50,6 +52,57 @@ describe("evaluateReadiness", () => {
     expect(failedCodes).toContain("CRITICAL_REQUIREMENTS_PACKAGED");
     expect(failedCodes).toContain("CRITICAL_REQUIREMENTS_HAVE_ACCEPTANCE");
     expect(failedCodes).toContain("REQUIRED_EVALS_DEFINED");
+    expect(failedCodes).toContain("NO_OPEN_BLOCKING_TASKS");
+  });
+
+  it("blocks a required perspective that is still only proposed", () => {
+    const snapshot = seedSnapshot();
+    const result = evaluateReadiness({
+      ...snapshot,
+      perspectives: [
+        ...snapshot.perspectives,
+        {
+          id: "p-risk",
+          deliverySubjectId: deliverySubject.id,
+          type: "RISK",
+          name: "Risk",
+          criticality: "MEDIUM",
+          required: true,
+          status: "PROPOSED",
+        },
+      ],
+    });
+
+    expect(
+      result.checks.find((c) => c.code === "REQUIRED_PERSPECTIVES_CONFIRMED")?.passed,
+    ).toBe(false);
+    expect(
+      result.checks.find((c) => c.code === "REQUIRED_PERSPECTIVES_OWNED")?.passed,
+    ).toBe(false);
+  });
+
+  it("requires verification for the current requirement revision", () => {
+    const snapshot = seedSnapshot();
+    const result = evaluateReadiness({
+      ...snapshot,
+      verifications: [
+        {
+          id: "v-old",
+          deliverySubjectId: deliverySubject.id,
+          targetType: "REQUIREMENT",
+          targetId: "r-verification-state",
+          targetRevision: 0,
+          verifierId: "u-data",
+          verdict: "VERIFIED",
+          status: "ACTIVE",
+          createdAt: "2026-10-03T08:00:00+02:00",
+        },
+      ],
+    });
+
+    expect(
+      result.checks.find((c) => c.code === "CRITICAL_REQUIREMENTS_VERIFIED")?.passed,
+    ).toBe(false);
   });
 
   it("does not let an informational score override a blocking failure", () => {
@@ -65,7 +118,7 @@ describe("evaluateReadiness", () => {
     expect(result.checks.some((check) => check.blocking && !check.passed)).toBe(true);
   });
 
-  it("treats an unowned blocking dependency as a readiness blocker", () => {
+  it("treats any unresolved blocking dependency as a readiness blocker even when owned", () => {
     const snapshot = seedSnapshot();
     const result = evaluateReadiness({
       ...snapshot,
@@ -78,17 +131,18 @@ describe("evaluateReadiness", () => {
           toType: "WORK_PACKAGE",
           toId: "wp-b",
           type: "BLOCKS",
+          ownerId: "u-architect",
           resolved: false,
           blocking: true,
         },
       ],
     });
 
-    const check = result.checks.find(
-      (candidate) => candidate.code === "BLOCKING_DEPENDENCIES_OWNED",
-    );
-
-    expect(check?.passed).toBe(false);
-    expect(check?.relatedObjectIds).toEqual(["dep-1"]);
+    expect(
+      result.checks.find((c) => c.code === "NO_UNRESOLVED_BLOCKING_DEPENDENCIES")?.passed,
+    ).toBe(false);
+    expect(
+      result.checks.find((c) => c.code === "BLOCKING_DEPENDENCIES_OWNED")?.passed,
+    ).toBe(true);
   });
 });
