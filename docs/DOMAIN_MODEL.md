@@ -1,18 +1,19 @@
 # Domain and Information Model
 
-This document is the canonical semantic model for the Req Helper PoC. `src/domain/schemas.ts` is the executable representation and must stay aligned with this document.
+This document is the canonical semantic model for the Req Helper PoC. `src/domain/schemas.ts` is its executable representation. They must stay aligned.
 
 ## 1. Core boundaries
 
-Req Helper separates five different concepts that must never be conflated:
+Req Helper separates these concerns:
 
-1. **Application capability** — global system roles such as ADMIN or WAR_ROOM_OPERATOR.
-2. **Delivery Subject access** — membership in one Delivery Subject.
-3. **Perspective authority** — OWNER/DELEGATE/CONTRIBUTOR/REVIEWER for one perspective in one Delivery Subject.
-4. **Knowledge/provenance** — statements, evidence, enterprise references and decisions supporting a requirement.
-5. **Verification** — an immutable human judgment tied to a specific target revision.
+1. **Application capability** — global system roles.
+2. **Delivery Subject access** — membership in one subject.
+3. **Perspective authority** — OWNER/DELEGATE/CONTRIBUTOR/REVIEWER for one perspective.
+4. **Knowledge/provenance** — contributions, evidence, enterprise references, source artifacts, decisions and explicit AI inference.
+5. **Verification** — append-only human judgment tied to the exact target/version where applicable.
+6. **Conversation/harness state** — interaction/execution state that never substitutes for domain truth.
 
-A job title, global role, expertise hint or membership does not by itself make a user authoritative for a perspective.
+A job title, global role, expertise hint, membership or model confidence does not by itself confer perspective authority.
 
 ## 2. Conceptual model
 
@@ -38,17 +39,19 @@ DeliverySubjectMembership -------- DeliverySubject
 
 DeliverySubject also aggregates Gap, Assumption, Dependency, ProposedDiff,
 RequirementRevision, Message, DomainEvent, AgentThread and AgentRun.
+
+UserProfile owns a non-authoritative TaskInboxItem projection for My Work.
 ```
 
 ## 3. Delivery Subject
 
 The Delivery Subject is the aggregate root and durable product object.
 
-Required fields include:
+It contains:
 
 - immutable `initialSignal`;
 - problem statement and desired outcome;
-- explicit `scopeIn` and `scopeOut`;
+- `scopeIn` / `scopeOut`;
 - constraints;
 - success measures;
 - lifecycle status;
@@ -63,9 +66,7 @@ DRAFT -> DISCOVERING -> DRILLING -> RESOLVING -> SPLITTING -> READY -> HANDED_OF
                          +--------------+
 ```
 
-`CANCELLED` is terminal. New evidence may move an active subject back to DRILLING or RESOLVING.
-
-`initialSignal` is immutable. Scope/outcome may evolve through explicit audited revisions.
+`CANCELLED` is terminal. New evidence may reopen an active subject back to DRILLING/RESOLVING. Scope/outcome changes are explicit audited mutations.
 
 ## 4. Access and role model
 
@@ -83,9 +84,7 @@ These grant application capabilities, not authority over a particular Delivery S
 SPONSOR | DELIVERY_LEAD | PARTICIPANT | OBSERVER
 ```
 
-Membership answers **who may access this Delivery Subject and in what broad capacity**.
-
-A user with global `DELIVERY_LEAD` capability may lead deliveries, but only a subject membership/`deliveryLeadId` establishes that they lead a particular Delivery Subject.
+Membership determines access/broad subject capacity. Global `DELIVERY_LEAD` means a user may lead subjects; subject membership establishes which subject they actually lead.
 
 ### Perspective assignment
 
@@ -93,17 +92,15 @@ A user with global `DELIVERY_LEAD` capability may lead deliveries, but only a su
 OWNER | DELEGATE | CONTRIBUTOR | REVIEWER
 ```
 
-- OWNER/DELEGATE may perform authoritative perspective verification.
-- CONTRIBUTOR may provide useful knowledge but is not authoritative.
-- REVIEWER may challenge/comment/recommend but is advisory and cannot satisfy authoritative verification by role alone.
+- OWNER/DELEGATE: may perform authoritative perspective verification.
+- CONTRIBUTOR: useful knowledge, non-authoritative by default.
+- REVIEWER: advisory challenge/comment/recommendation only.
 
-`PerspectiveAssignment.required` does not exist. Requiredness belongs to the Perspective, not to a person.
+`PerspectiveAssignment.required` does not exist. Requiredness belongs to Perspective.
 
 ## 5. Perspective
 
-A perspective is a required or optional lens, not an organizational unit.
-
-Canonical lifecycle:
+A Perspective is a required or optional lens, not an organizational unit.
 
 ```text
 PROPOSED -> CONFIRMED -> IN_PROGRESS -> COMPLETE
@@ -111,123 +108,93 @@ PROPOSED -> CONFIRMED -> IN_PROGRESS -> COMPLETE
                            +-> BLOCKED -> IN_PROGRESS
 ```
 
-A required perspective remaining `PROPOSED` blocks readiness. Every required perspective must have an active OWNER or DELEGATE before readiness.
+A required Perspective remaining PROPOSED blocks readiness. Every required Perspective needs an active OWNER or DELEGATE before READY.
 
-## 6. Source artifacts
+## 6. SourceArtifact
 
-User-supplied links/documents are represented as `SourceArtifact` records.
-
-The record contains metadata and a URI. Large content belongs in GCS or an external source, not directly in Firestore.
-
-Supported storage types:
+User-supplied links/documents become metadata records. Large bytes live in GCS/approved external storage.
 
 ```text
-LINK | GCS | EXTERNAL
+storageType = LINK | GCS | EXTERNAL
 ```
 
-Artifacts can become Evidence and/or RequirementSource records.
+Source artifacts can be referenced by Evidence and RequirementSource.
 
-## 7. Contributions and confidence
+## 7. Contribution
 
-A Contribution is an atomic human-provided statement.
+A Contribution is an atomic human-provided statement and stores:
 
-It stores:
-
+- author/task/perspective;
 - verbatim statement;
-- author and perspective;
-- epistemic mode (`KNOW`, `BELIEVE`, `OBSERVED`, `UNKNOWN`, `UNSPECIFIED`);
-- optional `statedConfidence` from the human;
-- optional `extractionConfidence` from AI parsing;
-- evidence references;
-- likely authoritative owner hint.
+- epistemic mode: `KNOW | BELIEVE | OBSERVED | UNKNOWN | UNSPECIFIED`;
+- optional human `statedConfidence`;
+- optional AI `extractionConfidence`;
+- evidence IDs;
+- optional likely-authoritative-owner hint.
 
-Neither confidence measure implies authority.
-
-Contribution authority is represented through explicit Verification records, not a mutable scalar `verificationStatus` field.
+Confidence never implies authority. Contribution verification is represented by Verification records, not a scalar status on Contribution.
 
 ## 8. Evidence
 
-Evidence is a typed link to information supporting a contribution, requirement, conflict position or decision.
-
-Kinds:
+Evidence is a typed link to source material supporting a contribution, requirement, conflict position or decision.
 
 ```text
 HUMAN_STATEMENT | KNOWLEDGE_REFERENCE | OBSERVATION | POLICY |
 DECISION | SOURCE_ARTIFACT | OTHER
 ```
 
-Evidence preserves a source ID and may include an excerpt/URI.
+## 9. Enterprise knowledge and ProposedDiff
 
-## 9. Enterprise knowledge and proposed diffs
+KnowledgeReference stores metadata about an external enterprise artifact. ProposedDiff records advisory `ADD | MODIFY | REMOVE | DEPRECATE | UNKNOWN_CHANGE` effects and has its own revision.
 
-`KnowledgeReference` stores metadata about an authoritative external artifact, not the full source object.
+No authoritative external write-back occurs in P0.
 
-`ProposedDiff` describes a possible effect on that artifact:
+## 10. Requirement and RequirementRevision
+
+Requirement is the current representation.
+
+- `priority` = delivery urgency/sequencing.
+- `criticality` = consequence if wrong/omitted/violated.
+- Requirement status tracks synthesis/conflict lifecycle, not human verification:
 
 ```text
-ADD | MODIFY | REMOVE | DEPRECATE | UNKNOWN_CHANGE
+DRAFT | NEEDS_INPUT | PROPOSED | CONFLICTED | SUPERSEDED
 ```
 
-Diffs are advisory until future reconciliation. A diff may itself be human-verified or rejected.
+Every semantic human or AI edit goes through one requirement-revision service and increments `Requirement.revision`. RequirementRevision is the immutable historical snapshot of that semantic revision plus actor/reason metadata.
 
-## 10. Requirements and revisions
+Canonical provenance is **not** duplicated into RequirementRevision; it is represented by RequirementSource records tied to the requirement revision.
 
-A Requirement contains the current representation.
+Manual `[Edit]` and AI synthesis use exactly the same revision/provenance/invalidation mechanics.
 
-`priority` and `criticality` are deliberately different:
+## 11. RequirementSource
 
-- **priority** = delivery urgency/sequencing importance;
-- **criticality** = consequence if the requirement is wrong, omitted or violated.
-
-Every semantic edit creates an immutable `RequirementRevision`.
-
-A revision records:
-
-- revision number;
-- statement/title at that revision;
-- actor type/id;
-- reason;
-- source IDs;
-- timestamp.
-
-Manual UI edits follow exactly the same revision path as AI-proposed edits.
-
-### Verification invalidation
-
-Verification is revision-bound. If Requirement revision 2 is created, verification of revision 1 no longer satisfies readiness. Existing Verification records remain for audit and may be marked `SUPERSEDED`.
-
-Acceptance criteria/evals bound to an older requirement revision are likewise considered stale when `targetRevision` is specified.
-
-## 11. Provenance
-
-Requirement provenance is represented by first-class `RequirementSource` records rather than embedded source arrays.
-
-Each record contains:
+Each provenance relation contains:
 
 - requirement ID;
 - requirement revision;
 - source kind;
 - source ID;
-- whether that source is authoritative for the statement;
+- `authoritative` flag validated by application invariants;
 - timestamp.
-
-Source kinds:
 
 ```text
 CONTRIBUTION | EVIDENCE | KNOWLEDGE_REFERENCE | DECISION |
 ASSUMPTION | SOURCE_ARTIFACT | AI_INFERENCE
 ```
 
-An AI inference may be useful provenance but does not become authoritative merely because the model is confident.
+AI inference is provenance, never automatically authority.
 
 ## 12. Verification
 
-Verification is immutable human judgment.
+Verification is append-only human judgment. Existing verification may be marked SUPERSEDED, but the original verdict/rationale is not rewritten.
 
 Targets:
 
 ```text
-CONTRIBUTION | REQUIREMENT | PROPOSED_DIFF
+CONTRIBUTION  -> atomic; no targetRevision
+REQUIREMENT   -> targetRevision REQUIRED
+PROPOSED_DIFF -> targetRevision REQUIRED
 ```
 
 Verdicts:
@@ -236,74 +203,48 @@ Verdicts:
 VERIFIED | REJECTED | AMENDED
 ```
 
-A Verification includes verifier, optional perspective, rationale, target revision where applicable, status and timestamp.
+For Requirement readiness, only an ACTIVE `VERIFIED` record for the **current requirement revision**, made by an active OWNER/DELEGATE for the stated perspective, counts.
 
-Only an active OWNER/DELEGATE for the relevant perspective can create an authoritative verification used by readiness. Reviewer feedback remains advisory.
+Changing a Requirement revision invalidates prior-revision verification for readiness while preserving it for audit.
 
-## 13. Gaps and assumptions
+## 13. Gap and Assumption
 
-A Gap represents missing information. It includes severity, owner hint, blocking flag and lifecycle.
+Gap represents missing information with severity, ownership hint, blocking flag and lifecycle.
 
-An Assumption includes:
+Assumption stores statement, owner, stated confidence, criticality, blocking flag, validation method, impact if wrong and status.
 
-- statement;
-- owner;
-- stated confidence;
-- criticality;
-- `blocking` flag;
-- validation method;
-- impact if wrong;
-- status.
+HIGH/CRITICAL assumptions require owner + validation method. A blocking assumption must not remain OPEN/INVALIDATED at READY.
 
-A HIGH/CRITICAL assumption must at least be owned and have a validation method. A blocking assumption must be resolved/accepted before READY.
+## 14. N-party Conflict
 
-## 14. Multi-party conflicts
+Conflict contains at least two structured `positions[]`. Each position may link actor, perspective, source item and evidence.
 
-A Conflict is N-party, not pairwise.
+Conflict also contains severity, affected owners, optional decision owner, blocking state, resolution and optional Decision reference.
 
-It contains `positions[]`, where each position links:
-
-- actor/perspective where known;
-- source item type/id;
-- concise position summary;
-- supporting evidence IDs.
-
-A conflict also has affected owners, optional decision owner, severity, blocking state and resolution.
-
-### Conflict-resolution mechanics
-
-The PoC is asynchronous:
+Resolution is asynchronous:
 
 ```text
 Conflict detected
- -> create response/review tasks for affected participants
- -> each participant records position/evidence in their own thread
- -> AI summarizes the current positions
- -> decision owner records explicit Decision or source correction
- -> conflict is marked resolved
+ -> participant-specific tasks
+ -> independent AgentThreads capture positions/evidence
+ -> shared Conflict Workspace aggregates current positions
+ -> AI may neutrally summarize/frame options
+ -> named human decision owner records Decision or source correction
+ -> conflict resolves
  -> affected requirements are reassessed
 ```
 
-The `[Discuss]` UI action opens this shared conflict workspace; it does **not** put multiple humans into one OpenCode session.
+A shared Conflict Workspace is not a shared OpenCode session.
 
-## 15. Decisions
+## 15. Decision
 
-A Decision is explicit and human-owned. It stores:
-
-- question;
-- alternatives considered;
-- chosen decision;
-- rationale;
-- owner;
-- participants;
-- affected requirements;
-- optional superseded decision.
+Decision is explicit and human-owned: question, alternatives, chosen decision, rationale, owner, participants, affected requirements and optional superseded decision.
 
 AI may frame options but cannot silently resolve contested choices.
 
-## 16. Tasks
+## 16. Task
 
-Canonical task types:
+Canonical types:
 
 ```text
 DRILL | VERIFY | REVIEW | RESOLVE_CONFLICT | FILL_GAP |
@@ -313,64 +254,55 @@ DECIDE | FOLLOW_UP | FINAL_REVIEW
 Canonical lifecycle:
 
 ```text
-OPEN
-  -> IN_PROGRESS
-  -> ANSWERED
-  -> PROCESSING
-  -> COMPLETED
-
-Any active state -> WAITING_ON_OTHER -> IN_PROGRESS
-Any nonterminal state -> CANCELLED
+OPEN -> IN_PROGRESS -> ANSWERED -> PROCESSING -> COMPLETED
+                     \-> WAITING_ON_OTHER -> IN_PROGRESS
+Any nonterminal -> CANCELLED
 ```
 
-Meaning:
+- ANSWERED: human input is durably saved.
+- PROCESSING: application/OpenCode is interpreting/applying it.
+- COMPLETED: resulting structured mutations/follow-ups are durable.
+- WAITING_ON_OTHER: blocked on another human/task.
 
-- `ANSWERED`: human input is durably saved.
-- `PROCESSING`: OpenCode/application services are interpreting/applying it.
-- `COMPLETED`: required structured state mutations/follow-ups have been persisted.
-- `WAITING_ON_OTHER`: this task cannot progress until another human/task resolves something.
+AgentRun status is separate. Any blocking Task not COMPLETED/CANCELLED blocks READY.
 
-AgentRun state is separate from Task state.
+### TaskInboxItem
 
-A blocking task that is not COMPLETED/CANCELLED blocks READY.
+`TaskInboxItem` is a non-authoritative per-user projection used only by My Work. It points to the authoritative Task and contains enough display metadata for a realtime inbox. Opening an inbox item reloads/re-authorizes the underlying subject/task.
 
-## 17. Work packages
+## 17. WorkPackage
 
-A WorkPackage represents the downstream implementation slice.
-
-It must identify:
+WorkPackage is a downstream implementation slice with:
 
 - human-readable name;
-- `targetAreaRef` (required);
-- optional target team ID;
+- required `targetAreaRef`;
+- optional target team;
 - optional human coordinator;
 - requirements;
 - dependencies;
 - linked enterprise knowledge.
 
-A person is not used as a substitute for the target implementation area/team.
+A human owner/coordinator is never a substitute for target implementation-area identity.
 
-## 18. Acceptance criteria and evaluations
+## 18. AcceptanceCriterion and Evaluation
 
-Acceptance Criteria and Evaluations use a generalized target:
+Both target exactly one of:
 
 ```text
 REQUIREMENT | WORK_PACKAGE | DELIVERY_SUBJECT
 ```
 
-This supports requirement-specific checks as well as cross-requirement integration acceptance and package-level tests.
+For `REQUIREMENT`, `targetRevision` is **mandatory**. A requirement-level criterion/eval for revision N does not satisfy readiness for revision N+1.
 
-For requirement targets, `targetRevision` may bind the item to the current semantic revision.
+WorkPackage and DeliverySubject targets are not revision-bound in P0.
 
-## 19. Dependencies
+This supports both atomic requirement checks and cross-requirement/package acceptance.
 
-A dependency links Requirement, WorkPackage or KnowledgeReference entities.
+## 19. Dependency
 
-`blocking=true` has one unambiguous meaning:
+Dependency links Requirement, WorkPackage or KnowledgeReference.
 
-> The dependency must be resolved before READY.
-
-Ownership is still required for unresolved blocking dependencies, but assignment alone never makes the blocking dependency acceptable.
+`blocking=true` means unresolved dependency prevents READY. Ownership is required for accountability but never clears the blocker.
 
 ## 20. Traceability
 
@@ -380,45 +312,43 @@ Minimum forward/reverse lineage:
 Signal / SourceArtifact
  -> Contribution / Evidence / KnowledgeReference
  -> RequirementSource
- -> RequirementRevision
+ -> RequirementRevision / current Requirement
  -> Verification / Decision
  -> WorkPackage
  -> AcceptanceCriterion / Evaluation
 ```
 
-Every final package item must be traversable back to the reason/evidence for its existence.
+Every final package item must be traversable back to its reason/evidence.
 
-## 21. Readiness semantics
+## 21. Readiness
 
-Readiness is deterministic code over persisted state.
+Readiness is deterministic code over persisted state. Blocking baseline:
 
-Blocking baseline:
-
-1. problem and desired outcome defined;
-2. every required perspective is confirmed;
+1. problem + desired outcome defined;
+2. every required perspective confirmed;
 3. every required perspective has active OWNER/DELEGATE;
-4. every HIGH/CRITICAL requirement has active Verification for its current revision;
+4. every HIGH/CRITICAL requirement has authoritative ACTIVE verification for its current revision;
 5. every HIGH/CRITICAL requirement has authoritative provenance for its current revision;
-6. no blocking gap/conflict is open;
+6. no blocking gap/conflict open;
 7. HIGH/CRITICAL assumptions have owner + validation method;
-8. no blocking assumption remains unresolved;
-9. required enterprise impact links exist;
+8. no blocking assumption unresolved;
+9. required enterprise impacts linked;
 10. every HIGH/CRITICAL requirement belongs to a targeted work package;
-11. current acceptance criteria exist for every HIGH/CRITICAL requirement;
-12. required evals exist;
-13. no blocking dependency remains unresolved;
+11. current-revision acceptance exists for every HIGH/CRITICAL requirement;
+12. every requirement flagged for eval has a current-revision eval;
+13. no blocking dependency unresolved;
 14. every unresolved blocking dependency has an owner;
-15. no blocking human task remains active.
+15. no blocking Task remains active.
 
-The readiness percentage is informational only; any failed blocking check means `NOT_READY`.
+Score is informational only. Any failed blocking check means `NOT_READY`.
 
 ## 22. Downstream package contract
 
-The human-readable and machine-readable package are generated from the same persisted model. P0 exposes both export and a read-only API:
+Human-readable and machine-readable handoff are generated from the same persisted model. P0 exposes:
 
 ```text
 GET /api/delivery-subjects/{id}/package
 GET /api/delivery-subjects/{id}/work-packages/{workPackageId}
 ```
 
-The downstream system consumes requirements, revisions/provenance, decisions, impacts, work packages, acceptance criteria, evals, dependencies and readiness evidence. It does not consume OpenCode session state as product truth.
+The downstream SDLC consumes scope/outcomes, requirements/revisions/provenance, verification, decisions, impacts, work packages, acceptance/evals, dependencies and readiness evidence. It never treats OpenCode session state as product truth.
