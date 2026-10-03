@@ -133,6 +133,8 @@ export const PerspectiveSchema = z.object({
   required: z.boolean(),
   rationale: z.string().optional(),
   status: PerspectiveStatus,
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 export const PerspectiveAssignmentSchema = z.object({
@@ -141,6 +143,8 @@ export const PerspectiveAssignmentSchema = z.object({
   userId: z.string(),
   relationship: AssignmentRelationship,
   status: z.enum(["ACTIVE", "COMPLETED", "REMOVED"]),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 export const EvidenceKind = z.enum([
@@ -192,12 +196,9 @@ export const ContributionSchema = z.object({
   createdAt: z.string(),
 });
 
-export const VerificationSchema = z.object({
+const VerificationCommon = z.object({
   id: z.string(),
   deliverySubjectId: z.string(),
-  targetType: z.enum(["CONTRIBUTION", "REQUIREMENT", "PROPOSED_DIFF"]),
-  targetId: z.string(),
-  targetRevision: z.number().int().positive().optional(),
   verifierId: z.string(),
   perspectiveId: z.string().optional(),
   verdict: z.enum(["VERIFIED", "REJECTED", "AMENDED"]),
@@ -205,6 +206,23 @@ export const VerificationSchema = z.object({
   status: z.enum(["ACTIVE", "SUPERSEDED"]).default("ACTIVE"),
   createdAt: z.string(),
 });
+
+export const VerificationSchema = z.discriminatedUnion("targetType", [
+  VerificationCommon.extend({
+    targetType: z.literal("CONTRIBUTION"),
+    targetId: z.string(),
+  }),
+  VerificationCommon.extend({
+    targetType: z.literal("REQUIREMENT"),
+    targetId: z.string(),
+    targetRevision: z.number().int().positive(),
+  }),
+  VerificationCommon.extend({
+    targetType: z.literal("PROPOSED_DIFF"),
+    targetId: z.string(),
+    targetRevision: z.number().int().positive(),
+  }),
+]);
 
 export const KnowledgeReferenceSchema = z.object({
   id: z.string(),
@@ -247,6 +265,8 @@ export const ProposedDiffSchema = z.object({
   reason: z.string(),
   status: z.enum(["PROPOSED", "CONFIRMED", "REJECTED", "SUPERSEDED"]),
   revision: z.number().int().positive().default(1),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 export const RequirementType = z.enum([
@@ -268,13 +288,13 @@ export const RequirementType = z.enum([
   "TRANSITION",
 ]);
 
+// Verification is a separate first-class record. Requirement status tracks
+// synthesis/conflict lifecycle, not whether a human has verified the current revision.
 export const RequirementStatus = z.enum([
   "DRAFT",
   "NEEDS_INPUT",
   "PROPOSED",
-  "VERIFIED",
   "CONFLICTED",
-  "APPROVED",
   "SUPERSEDED",
 ]);
 
@@ -339,13 +359,25 @@ export const GapSchema = z.object({
   requiredOwnerId: z.string().optional(),
   blocking: z.boolean(),
   status: z.enum(["OPEN", "RESOLVED", "ACCEPTED_RISK", "SUPERSEDED"]),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
+
+export const ConflictItemType = z.enum([
+  "CONTRIBUTION",
+  "REQUIREMENT",
+  "KNOWLEDGE_REFERENCE",
+  "DECISION",
+  "ASSUMPTION",
+  "PROPOSED_DIFF",
+  "OTHER",
+]);
 
 export const ConflictPositionSchema = z.object({
   id: z.string(),
   actorId: z.string().optional(),
   perspectiveId: z.string().optional(),
-  itemType: z.string(),
+  itemType: ConflictItemType,
   itemId: z.string(),
   summary: z.string(),
   evidenceIds: z.array(z.string()).default([]),
@@ -363,6 +395,8 @@ export const ConflictSchema = z.object({
   resolution: z.string().optional(),
   decisionId: z.string().optional(),
   status: z.enum(["OPEN", "RESOLVED", "SUPERSEDED"]),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 export const AssumptionSchema = z.object({
@@ -376,6 +410,8 @@ export const AssumptionSchema = z.object({
   validationMethod: z.string().optional(),
   impactIfWrong: z.string().optional(),
   status: z.enum(["OPEN", "VALIDATED", "INVALIDATED", "ACCEPTED", "SUPERSEDED"]),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 export const DecisionSchema = z.object({
@@ -403,6 +439,8 @@ export const WorkPackageSchema = z.object({
   requirementIds: z.array(z.string()),
   dependencyIds: z.array(z.string()),
   knowledgeReferenceIds: z.array(z.string()),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 export const AcceptanceTargetType = z.enum([
@@ -411,12 +449,9 @@ export const AcceptanceTargetType = z.enum([
   "DELIVERY_SUBJECT",
 ]);
 
-export const AcceptanceCriterionSchema = z.object({
+const AcceptanceCommon = z.object({
   id: z.string(),
   deliverySubjectId: z.string(),
-  targetType: AcceptanceTargetType,
-  targetId: z.string(),
-  targetRevision: z.number().int().positive().optional(),
   given: z.string().optional(),
   when: z.string().optional(),
   then: z.string().min(1),
@@ -429,14 +464,29 @@ export const AcceptanceCriterionSchema = z.object({
   ]),
   automatable: z.boolean(),
   priority: Priority,
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
-export const EvaluationSchema = z.object({
+export const AcceptanceCriterionSchema = z.discriminatedUnion("targetType", [
+  AcceptanceCommon.extend({
+    targetType: z.literal("REQUIREMENT"),
+    targetId: z.string(),
+    targetRevision: z.number().int().positive(),
+  }),
+  AcceptanceCommon.extend({
+    targetType: z.literal("WORK_PACKAGE"),
+    targetId: z.string(),
+  }),
+  AcceptanceCommon.extend({
+    targetType: z.literal("DELIVERY_SUBJECT"),
+    targetId: z.string(),
+  }),
+]);
+
+const EvaluationCommon = z.object({
   id: z.string(),
   deliverySubjectId: z.string(),
-  targetType: AcceptanceTargetType,
-  targetId: z.string(),
-  targetRevision: z.number().int().positive().optional(),
   name: z.string(),
   evaluationType: z.enum([
     "DETERMINISTIC_TEST",
@@ -450,7 +500,25 @@ export const EvaluationSchema = z.object({
   expectedBehaviour: z.string(),
   threshold: z.string().optional(),
   failureBehaviour: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
+
+export const EvaluationSchema = z.discriminatedUnion("targetType", [
+  EvaluationCommon.extend({
+    targetType: z.literal("REQUIREMENT"),
+    targetId: z.string(),
+    targetRevision: z.number().int().positive(),
+  }),
+  EvaluationCommon.extend({
+    targetType: z.literal("WORK_PACKAGE"),
+    targetId: z.string(),
+  }),
+  EvaluationCommon.extend({
+    targetType: z.literal("DELIVERY_SUBJECT"),
+    targetId: z.string(),
+  }),
+]);
 
 export const DependencySchema = z.object({
   id: z.string(),
@@ -464,6 +532,8 @@ export const DependencySchema = z.object({
   ownerId: z.string().optional(),
   resolved: z.boolean(),
   blocking: z.boolean().default(false),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 export const TaskType = z.enum([
@@ -500,6 +570,8 @@ export const TaskSchema = z.object({
   blocking: z.boolean(),
   status: TaskStatus,
   relatedObjectIds: z.array(z.string()),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 export type DeliverySubject = z.infer<typeof DeliverySubjectSchema>;
