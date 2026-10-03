@@ -27,18 +27,23 @@ export const subjectCollection = (
   db: Firestore,
   subjectId: string,
   name:
+    | "members"
+    | "sourceArtifacts"
     | "perspectives"
     | "assignments"
     | "tasks"
     | "contributions"
+    | "evidence"
+    | "verifications"
+    | "knowledgeRefs"
+    | "proposedDiffs"
     | "requirements"
     | "requirementRevisions"
+    | "requirementSources"
     | "gaps"
     | "conflicts"
     | "assumptions"
     | "decisions"
-    | "knowledgeRefs"
-    | "impacts"
     | "workPackages"
     | "acceptanceCriteria"
     | "evaluations"
@@ -59,10 +64,6 @@ export type AuditEventInput = {
   runId?: string;
 };
 
-/**
- * Runs a material subject mutation and increments the subject revision in the
- * same Firestore transaction. Domain services should build on this primitive.
- */
 export async function mutateSubject<T>(
   subjectId: string,
   mutate: (transaction: Transaction, currentRevision: number) => Promise<T>,
@@ -165,10 +166,6 @@ export type UpdateThreadSessionInput = {
   sessionGeneration: number;
 };
 
-/**
- * Persists the recoverable OpenCode session mapping. This does not make
- * OpenCode state authoritative; it is only a continuity optimization.
- */
 export async function updateThreadSession({
   subjectId,
   threadId,
@@ -186,16 +183,23 @@ export async function updateThreadSession({
   );
 }
 
-export async function markThreadContextSynced(
+/**
+ * Records only the highest Delivery Subject revision that was actually
+ * presented to the OpenCode session as authoritative context.
+ *
+ * Do not pass domainRevisionAtEnd unless those end-of-run mutations were also
+ * explicitly re-presented to the session after commit.
+ */
+export async function markThreadContextPresented(
   subjectId: string,
   threadId: string,
-  domainRevision: number,
+  contextRevisionPresented: number,
   runId: string,
 ): Promise<void> {
   const ref = subjectCollection(firestore, subjectId, "agentThreads").doc(threadId);
   await ref.set(
     {
-      lastContextRevision: domainRevision,
+      contextRevisionPresented,
       lastRunId: runId,
       updatedAt: FieldValue.serverTimestamp(),
     },
@@ -213,10 +217,6 @@ export type PersistMessageInput = {
   relatedObjectIds?: string[];
 };
 
-/**
- * User-visible message history is persisted in Firestore so it survives loss
- * of OpenCode local session state. Messages are not authoritative requirements.
- */
 export async function persistThreadMessage(input: PersistMessageInput): Promise<string> {
   const ref = subjectCollection(firestore, input.subjectId, "messages").doc();
   await ref.create({
