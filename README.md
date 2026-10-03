@@ -2,26 +2,29 @@
 
 AI-first requirements orchestration PoC for enterprise delivery.
 
-Req Helper turns a raw signal/idea into a traceable, multi-perspective requirement package that a downstream SDLC can implement. The PoC is intentionally narrower than OrgWard: requirements discovery, human/AI review loops, enterprise knowledge linkage, requirement decomposition, acceptance/evals, and deterministic readiness.
+Req Helper turns a raw signal/idea into a traceable, multi-perspective **change set over current enterprise requirements and knowledge** that a downstream SDLC can implement.
 
 ## Core thesis
 
-The primary object is a **Delivery Subject**, not a chat transcript or agent session.
+The primary object is a **Delivery Subject**, not chat. The system does not assume every idea needs brand-new requirements.
 
 ```text
 Signal + source material
-  -> Delivery Subject + scope/outcome
-  -> Knowledge + impact hypotheses
-  -> Subject membership + required perspectives
-  -> Perspective-specific human drills
-  -> Contributions + evidence + verification
-  -> Requirements + revisions + provenance
-  -> Gaps + assumptions + N-party conflicts + decisions
-  -> Targeted work packages
-  -> Acceptance criteria + evals
-  -> Deterministic readiness
-  -> Requirement package/API for downstream SDLC
+  -> Delivery Subject + pinned Requirement Profile
+  -> discover CURRENT requirements + knowledge
+  -> discover ACTIVE proposals from other subjects
+  -> classify changes:
+       CREATE | MODIFY | SUPERSEDE | RETIRE | NO_CHANGE
+  -> multi-perspective human/AI drills
+  -> proposed Requirement revisions + provenance + verification
+  -> gaps / assumptions / conflicts / decisions
+  -> work packages + acceptance/evals
+  -> deterministic readiness
+  -> explicit change-set package
+  -> downstream SDLC
 ```
+
+**CURRENT** and **PROPOSED** are separate concepts throughout the model and UI. READY/HANDED_OFF does not mean a proposal has become current enterprise truth.
 
 ## PoC architecture
 
@@ -38,25 +41,88 @@ Req Helper API on Cloud Run
  realtime UI      Vertex AI / Model Garden
        |
  authorized users
-
-Large uploaded source files -> GCS/external storage
 ```
 
-### Recommended stack
+### Stack
 
 - TypeScript / Node.js
 - Next.js + React
 - assistant-ui
-- Firebase Authentication or enterprise identity adapter
-- Cloud Firestore authoritative shared domain state
-- GCS/external object storage for uploaded source files
+- Firebase Auth / enterprise identity adapter
+- Cloud Firestore
+- GCS/external file storage
 - OpenCode programmable agent harness
-- Vertex AI / Model Garden through OpenCode
-- Zod/JSON Schema for structured AI outputs
+- Vertex AI / Model Garden
+- Zod/JSON Schema
 - Cloud Run
-- MCP / REST / enterprise API / files / search adapter boundary
+- MCP / REST / search / files / repository adapters
 
-There is no LangGraph requirement. The application owns a small deterministic workflow/state machine around OpenCode.
+No LangGraph requirement. Req Helper owns a small deterministic workflow/state machine around OpenCode.
+
+## assistant-ui is more than chat
+
+P0 explicitly uses:
+
+- normal chat for questions/explanations;
+- **Tool UI** for requirement matches/change proposals/verification/conflicts/decisions/knowledge diffs;
+- **form-filling copilot** for Scope, Requirement, Decision, WorkPackage and Requirement Profile drafts;
+- **constrained Generative UI** for Bigger Picture, current-vs-proposed, impact/traceability/readiness views;
+- experimental Interactables only for non-authoritative scratch surfaces.
+
+See `docs/ASSISTANT_UI_INTERACTIONS.md`.
+
+## Requirement Profiles — requirements for requirements
+
+A versioned Requirement Profile defines quality/completeness rules for a class of Delivery Subjects without changing the core schema/code.
+
+Examples:
+
+```text
+API Change v8
+Data Model Change v4
+Regulatory Change v3
+Migration v2
+```
+
+Profiles define required perspectives, expected requirement types, typed detail fields, acceptance/evaluation rules and existing-requirement matching policies.
+
+A Delivery Subject pins one exact published profile version. A newer profile never silently changes existing subjects; Delivery Lead can compare/upgrade explicitly.
+
+## Current baseline and proposals
+
+### Current Requirement Catalogue
+
+```text
+requirementCatalog/{stableRequirementId}
+  /versions/{immutableVersion}
+```
+
+### Subject-local proposed state
+
+```text
+deliverySubjects/{subjectId}
+  /requirements
+  /requirementRevisions
+  /requirementChangeProposals
+  /requirementMatches
+  /requirementQualityFindings
+  /requirementSources
+```
+
+Example:
+
+```text
+CURRENT REQ-248 v6
+       |
+       +-- DS-123: MODIFY -> R-17 rev3
+       +-- DS-119: MODIFY -> R-22 rev2   <-- collision surfaced
+```
+
+A proposed CREATE should first search current requirements and active proposals. Duplicate/overlap/contradiction candidates are persisted/reviewed rather than hidden in model reasoning.
+
+If the baseline advances while a subject is active, the proposal becomes `STALE_BASELINE` until rebased/reassessed.
+
+See `docs/REQUIREMENT_BASELINES_AND_PROFILES.md`.
 
 ## Authority model
 
@@ -66,48 +132,32 @@ Three concepts stay separate:
 2. Delivery Subject membership/access: `SPONSOR`, `DELIVERY_LEAD`, `PARTICIPANT`, `OBSERVER`;
 3. perspective authority: `OWNER`, `DELEGATE`, `CONTRIBUTOR`, `REVIEWER`.
 
-Global role, job title, template or expertise hint never grants perspective authority automatically. Reviewer is advisory; OWNER/DELEGATE can satisfy authoritative verification.
+OWNER/DELEGATE can satisfy authoritative verification; Reviewer is advisory.
 
-## Multi-user model
-
-Each participant gets an independent logical interaction thread:
-
-```text
-deliverySubjectId + perspectiveId + participantId
-```
-
-Several humans never write concurrently into one OpenCode session. Threads converge through validated Firestore domain records and authorized realtime listeners.
-
-`My Work` does not run a broad browser collection-group query across all Delivery Subjects. The backend maintains a private non-authoritative `users/{uid}/taskInbox` projection so the inbox remains realtime while subject data stays protected by per-subject membership.
-
-## OpenCode state synchronization
+## OpenCode synchronization
 
 OpenCode local state is disposable. There is no wholesale replication of its local DB/disk into Firestore.
 
-For every meaningful run:
+Every meaningful run receives current authoritative subject state including:
 
-```text
-persist human answer
- -> load authoritative Firestore state
- -> resolve/recreate OpenCode session
- -> compare current domain revision with contextRevisionPresented
- -> FULL hydrate if shared state changed in P0
- -> run OpenCode
- -> validate structured proposals
- -> revision/idempotency/authz checks
- -> commit authoritative Firestore mutations
- -> store domainRevisionAtEnd separately
-```
+- pinned profile/version + relevant rules;
+- CURRENT baseline requirements/knowledge;
+- PROPOSED change operations/matches;
+- proposed Requirement revisions/details;
+- profile findings;
+- gaps/conflicts/decisions/work packages.
 
-`contextRevisionPresented` means the highest authoritative Delivery Subject revision actually shown to that OpenCode session. It must not be blindly set to same-run `domainRevisionAtEnd`.
+`contextRevisionPresented` records what the session actually saw, not same-run `domainRevisionAtEnd`.
 
 ## Firestore shape
 
 ```text
-users/{userId}
-  /taskInbox
-roleTemplates/{roleTemplateId}
-perspectiveTemplates/{perspectiveTemplateId}
+users/{userId}/taskInbox
+roleTemplates
+perspectiveTemplates
+
+requirementProfiles/{profileId}/versions/{version}
+requirementCatalog/{requirementId}/versions/{version}
 
 deliverySubjects/{subjectId}
   /members
@@ -122,6 +172,9 @@ deliverySubjects/{subjectId}
   /proposedDiffs
   /requirements
   /requirementRevisions
+  /requirementChangeProposals
+  /requirementMatches
+  /requirementQualityFindings
   /requirementSources
   /gaps
   /conflicts
@@ -137,72 +190,55 @@ deliverySubjects/{subjectId}
   /agentRuns
 ```
 
-See `docs/FIRESTORE_MODEL.md`.
+## Readiness additions
 
-## Canonical semantics
+READY now also requires:
 
-- `priority` = delivery urgency/sequencing.
-- `criticality` = consequence if wrong/omitted.
-- Requiredness belongs to Perspective, not Assignment.
-- Verification is append-only and requirement-revision specific.
-- Requirement provenance is first-class `RequirementSource` data.
-- Conflict supports 2+ structured positions.
-- `blocking=true` dependency must be resolved before READY; ownership alone does not clear it.
-- WorkPackage identifies `targetAreaRef`; team/coordinator are separate.
-- Acceptance/evals may target Requirement, WorkPackage or DeliverySubject; Requirement targets are revision-bound.
+- a published Requirement Profile version is pinned;
+- no blocking OPEN profile finding;
+- every active proposed Requirement has an explicit change proposal;
+- no stale requirement baseline;
+- no blocking unreviewed duplicate/contradiction candidate.
+
+Existing authority/provenance/conflict/dependency/acceptance/evaluation/task readiness rules remain.
 
 ## P0 boundary
 
 In scope:
 
-- Delivery Subject + scope/source material;
-- subject membership/access;
-- admin/user/perspective setup;
-- perspective assignments/authority;
-- realtime multi-user drills;
-- private realtime My Work projection;
-- OpenCode session recovery/context refresh;
-- Contribution/Evidence/Verification;
-- RequirementRevision/RequirementSource;
-- gaps/assumptions/N-party conflicts/decisions;
-- enterprise knowledge/ProposedDiffs;
-- targeted work packages/dependencies;
-- generalized acceptance/evals;
-- deterministic readiness;
-- normal-user requirement history;
-- JSON/Markdown export + package/work-package read APIs;
-- war-room traces.
+- small representative current requirement catalogue;
+- versioned Requirement Profiles + admin editor;
+- current-vs-proposed change-set UX;
+- duplicate/contradiction/current/active-proposal matching;
+- capability links;
+- typed profile detail fields/findings;
+- assistant-ui Tool UI/form copilot/generative UI;
+- realtime multi-user requirements drills;
+- OpenCode/Vertex;
+- provenance/verification/conflicts/decisions;
+- work packages/acceptance/evals/readiness;
+- JSON/Markdown + package APIs.
 
 Out of scope:
 
-- autonomous implementation/deployment;
-- authoritative source-system write-back;
-- generic enterprise knowledge graph/workflow platform;
+- automatic implementation/deployment;
+- automatic promotion of proposal into current requirement catalogue;
+- external source-system write-back;
+- generic enterprise knowledge graph;
 - production-complete IAM/SCIM/notifications.
-
-## Repository map
-
-```text
-docs/                PRD, architecture, domain, Firestore, UX, BPMN, admin, sync, plan
-src/domain/          Canonical Zod schemas + readiness
-src/harness/         OpenCode harness boundary
-src/persistence/     Firestore helpers/contracts
-src/adapters/        Enterprise knowledge/identity boundaries
-src/seed/            War-room scenario
-prompts/             Small task-specific prompt skills
-tests/               Domain/readiness tests
-```
 
 ## Start here
 
 1. `AGENTS.md`
 2. `docs/PRD.md`
 3. `docs/DOMAIN_MODEL.md`
-4. `src/domain/schemas.ts`
-5. `docs/ARCHITECTURE.md`
-6. `docs/FIRESTORE_MODEL.md`
-7. `docs/UI_MOCKUPS.md`
-8. `docs/OPENCODE_STATE_SYNC.md`
-9. `docs/IMPLEMENTATION_PLAN.md`
+4. `docs/REQUIREMENT_BASELINES_AND_PROFILES.md`
+5. `docs/ASSISTANT_UI_INTERACTIONS.md`
+6. `src/domain/schemas.ts`
+7. `docs/ARCHITECTURE.md`
+8. `docs/FIRESTORE_MODEL.md`
+9. `docs/UI_MOCKUPS.md`
+10. `docs/OPENCODE_STATE_SYNC.md`
+11. `docs/IMPLEMENTATION_PLAN.md`
 
-If artifacts disagree, `src/domain/schemas.ts` + `docs/DOMAIN_MODEL.md` are canonical and the conflicting artifact must be fixed rather than preserved.
+If artifacts disagree, `src/domain/schemas.ts` + `docs/DOMAIN_MODEL.md` win and the conflicting artifact must be fixed.
