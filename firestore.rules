@@ -23,36 +23,23 @@ service cloud.firestore {
       allow read: if isAdmin() || isSubjectMember(subjectId);
       allow write: if false;
 
-      match /members/{memberId} {
-        allow read: if isAdmin() || isSubjectMember(subjectId);
-        allow write: if false;
-      }
-
-      match /tasks/{taskId} {
-        allow read: if isAdmin() || isSubjectMember(subjectId);
-        allow write: if false;
-      }
-
       match /{subcollection}/{documentId} {
         allow read: if isAdmin() || isSubjectMember(subjectId);
         allow write: if false;
       }
     }
 
-    // Collection-group My Work queries need an explicit recursive rule. Each
-    // Task carries deliverySubjectId, which is checked against membership.
-    match /{path=**}/tasks/{taskId} {
-      allow read: if isAdmin()
-        || (resource.data.deliverySubjectId is string
-          && isSubjectMember(resource.data.deliverySubjectId));
-      allow write: if false;
-    }
-
-    // PoC profiles are readable to signed-in users so names/expertise can be
-    // shown in assignment pickers. Profile mutation remains backend-only.
+    // Profiles are readable to signed-in PoC users for names/expertise labels.
+    // My Work uses a per-user backend-maintained inbox projection rather than a
+    // cross-subject task collection-group query, preserving subject isolation.
     match /users/{userId} {
       allow read: if signedIn();
       allow write: if false;
+
+      match /inbox/{entryId} {
+        allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+        allow write: if false;
+      }
     }
 
     match /roleTemplates/{roleTemplateId} {
