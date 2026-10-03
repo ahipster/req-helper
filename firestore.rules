@@ -18,6 +18,13 @@ service cloud.firestore {
       }
     }
 
+    // My Work uses a collection-group query over task subcollections across
+    // Delivery Subjects. Keep browser access read-only.
+    match /{path=**}/tasks/{taskId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
     match /users/{userId} {
       allow read: if signedIn();
       allow write: if false;
