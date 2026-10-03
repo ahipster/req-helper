@@ -8,7 +8,9 @@ Cloud Firestore is the authoritative shared state store for the Req Helper PoC. 
 - realtime UI updates;
 - independent perspective/participant agent threads;
 - deterministic readiness and auditability;
-- safe reruns and concurrent AI activity.
+- safe reruns and concurrent AI activity;
+- admin-managed PoC users/role templates/perspective templates;
+- recovery from stale or lost OpenCode local sessions.
 
 Do not model the Delivery Subject as one giant JSON document.
 
@@ -16,10 +18,62 @@ Do not model the Delivery Subject as one giant JSON document.
 
 ```text
 deliverySubjects/{subjectId}
-users/{userId}                    # PoC profile/identity metadata only
+users/{userId}
+roleTemplates/{roleTemplateId}
+perspectiveTemplates/{perspectiveTemplateId}
 ```
 
-Most product data is scoped below a Delivery Subject.
+`users`, `roleTemplates`, and `perspectiveTemplates` are global PoC configuration. Delivery Subject authority still comes from explicit assignment documents under each Delivery Subject.
+
+See `docs/ADMIN_UI.md` for the role semantics.
+
+## User profile
+
+```ts
+{
+  id: string,
+  displayName: string,
+  email?: string,
+  active: boolean,
+  systemRoles: ("ADMIN" | "PARTICIPANT" | "DELIVERY_LEAD" | "WAR_ROOM_OPERATOR")[],
+  expertisePerspectiveTypes: string[],
+  title?: string,
+  team?: string,
+  createdAt: Timestamp,
+  updatedAt: Timestamp
+}
+```
+
+Expertise hints help routing/suggestions. They are not authority.
+
+## Role template
+
+```ts
+{
+  id: string,
+  name: string,
+  description?: string,
+  systemRoles: string[],
+  suggestedPerspectiveTypes: string[],
+  active: boolean
+}
+```
+
+Role templates are convenience configuration only.
+
+## Perspective template
+
+```ts
+{
+  id: string,
+  type: string,
+  name: string,
+  description?: string,
+  defaultCriticality?: string,
+  active: boolean,
+  defaultPromptSkill?: string
+}
+```
 
 ## Delivery Subject
 
@@ -110,6 +164,8 @@ Use IDs/references to connect documents instead of large nested arrays.
   createdAt: Timestamp
 }
 ```
+
+Assignment is the authoritative statement about a person's relationship to a perspective for this Delivery Subject. Global roles/templates cannot substitute for it.
 
 ## Task
 
@@ -231,17 +287,23 @@ Document:
   perspectiveId?: string,
   participantId: string,
   opencodeSessionId?: string,
+  sessionGeneration: number,
   status: "IDLE" | "RUNNING" | "ERROR" | "CLOSED",
   leaseOwner?: string,
   leaseExpiresAt?: Timestamp,
   lastContextRevision?: number,
+  lastMessageAt?: Timestamp,
   lastRunId?: string,
   createdAt: Timestamp,
   updatedAt: Timestamp
 }
 ```
 
-The OpenCode session ID is an optimization. If it becomes invalid, create another session and hydrate from authoritative context.
+The OpenCode session ID is an optimization. If it becomes invalid, create another session, increment `sessionGeneration`, and full-hydrate from authoritative Firestore context.
+
+`lastContextRevision` records the Delivery Subject revision last injected as authoritative current state into the thread. Before each meaningful run, compare it with the current Delivery Subject `revision` and refresh context if they differ.
+
+See `docs/OPENCODE_STATE_SYNC.md`.
 
 ## AgentRun
 
@@ -250,9 +312,13 @@ The OpenCode session ID is an optimization. If it becomes invalid, create anothe
   id: string,
   threadId: string,
   opencodeSessionId?: string,
+  sessionGeneration: number,
   perspectiveId?: string,
   participantId: string,
   domainRevisionAtStart: number,
+  lastContextRevisionBefore?: number,
+  hydrationMode: "FULL" | "DELTA" | "MINIMAL",
+  domainRevisionAtEnd?: number,
   provider?: string,
   model?: string,
   skillVersions: string[],
@@ -262,7 +328,7 @@ The OpenCode session ID is an optimization. If it becomes invalid, create anothe
   proposedCommands?: unknown[],
   appliedCommandIds?: string[],
   rejectedCommands?: unknown[],
-  status: "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED",
+  status: "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED" | "ABANDONED",
   errorCategory?: string,
   startedAt: Timestamp,
   endedAt?: Timestamp
@@ -279,6 +345,7 @@ Messages are interaction history and can be used to reconstruct user-visible thr
 {
   id: string,
   threadId: string,
+  runId?: string,
   actorType: "HUMAN" | "ASSISTANT" | "SYSTEM" | "TOOL",
   actorId?: string,
   content: string,
@@ -286,6 +353,8 @@ Messages are interaction history and can be used to reconstruct user-visible thr
   createdAt: Timestamp
 }
 ```
+
+Persist user-visible human/assistant messages in Firestore so the UI can reconstruct conversation continuity even if OpenCode local state disappears.
 
 ## Events
 
@@ -323,7 +392,9 @@ Each proposed command includes:
 Before applying:
 1. re-read the current object/revision;
 2. reject or recompute if the command is stale;
-3. commit state + event atomically where feasible.
+3. verify the command has not already been applied;
+4. validate authorization/domain invariants;
+5. commit state + event atomically where feasible.
 
 ### Thread lease
 
@@ -335,6 +406,20 @@ Acquire AgentThread lease transactionally:
 - expired leases are recoverable.
 
 This prevents two prompts racing through the same OpenCode session.
+
+## OpenCode synchronization rule
+
+There is no continuous replication of OpenCode local disk/database into Firestore.
+
+Req Helper persists product-level state as interactions occur:
+
+- user-visible messages;
+- run/tool metadata;
+- validated structured outputs;
+- applied/rejected domain commands;
+- domain events.
+
+At every meaningful run, current Firestore state is authoritative and is supplied through a bounded context envelope. If OpenCode conversation memory disagrees with current Firestore state, Firestore wins.
 
 ## Realtime subscriptions
 
@@ -349,13 +434,18 @@ Examples:
 - Delivery Subject document;
 - perspectives;
 - blocking gaps/conflicts;
-- recent events (limited);
+- recent events (limited).
 
 ### Drill Workspace
 - current task;
 - thread messages;
 - relevant requirements;
 - conflicts tied to current perspective.
+
+### Admin
+- users;
+- roleTemplates;
+- perspectiveTemplates.
 
 ### War Room
 - recent agentRuns;

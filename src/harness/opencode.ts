@@ -19,9 +19,9 @@ export type OpenCodeHarnessConfig = {
 /**
  * Thin OpenCode adapter.
  *
- * Req Helper remains responsible for persistence, thread leases, context
- * construction, authorization, domain commands and audit records. OpenCode is
- * only the reasoning/tool execution harness.
+ * Req Helper remains responsible for persistence, thread leases, authoritative
+ * Firestore context hydration, authorization, domain commands and audit records.
+ * OpenCode is only the reasoning/tool execution harness.
  */
 export class OpenCodeHarness implements AgentHarness {
   private readonly client: ReturnType<typeof createOpencodeClient>;
@@ -39,16 +39,20 @@ export class OpenCodeHarness implements AgentHarness {
   }
 
   async ensureThread(input: EnsureThreadInput): Promise<AgentThreadHandle> {
+    const currentGeneration = input.sessionGeneration ?? 0;
+
     if (input.existingSessionId) {
       try {
         await this.client.session.get({ path: { id: input.existingSessionId } });
         return {
           logicalThreadId: input.logicalThreadId,
           sessionId: input.existingSessionId,
+          sessionGeneration: currentGeneration,
           recreated: false,
         };
       } catch {
-        // Session state is explicitly disposable. Recreate below.
+        // OpenCode session state is explicitly disposable. Recreate below and
+        // let the application perform a FULL Firestore-backed hydration.
       }
     }
 
@@ -65,6 +69,7 @@ export class OpenCodeHarness implements AgentHarness {
     return {
       logicalThreadId: input.logicalThreadId,
       sessionId: session.id,
+      sessionGeneration: currentGeneration + 1,
       recreated: true,
     };
   }
@@ -114,6 +119,7 @@ export class OpenCodeHarness implements AgentHarness {
       return {
         output,
         sessionId: input.thread.sessionId,
+        sessionGeneration: input.thread.sessionGeneration,
         provider: response.data?.info?.providerID ?? this.providerId,
         model: response.data?.info?.modelID ?? this.modelId,
       };

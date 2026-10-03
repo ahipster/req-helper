@@ -49,6 +49,8 @@ SIGNAL
 
 The team must be able to observe why the flow stalls, tune prompts/workflow, rerun affected analysis, and distinguish AI failures from domain/workflow/ownership failures.
 
+The PoC must also demonstrate that loss or staleness of OpenCode local session state does not lose product state: a participant can continue from Firestore-backed context after session recreation.
+
 ## 5. Non-goals
 
 Not in the one-week PoC:
@@ -57,7 +59,7 @@ Not in the one-week PoC:
 - authoritative write-back to architecture/process/model repositories;
 - replacement for Jira/project portfolio tools;
 - full governance/approval engine;
-- production RBAC/notification stack;
+- production-grade enterprise IAM/SCIM;
 - generic agent platform.
 
 ## 6. Actors
@@ -83,10 +85,16 @@ Consumes finalized work packages and their traceability, acceptance criteria and
 ### War-room Operator
 Inspects orchestration traces and tunes configuration/prompts during the PoC.
 
+### Req Helper Admin
+Configures PoC users, global application roles, role templates and perspective templates/catalogue.
+
 ## 7. Core product principles
 
 ### Contribution is not authority
 A person may provide useful information outside formal ownership. Preserve it, route it to the likely owner, and track verification separately.
+
+### Global role is not Delivery Subject authority
+Application roles, job titles, role templates and expertise hints help configure/suggest participants. Only an explicit Delivery Subject assignment establishes OWNER/DELEGATE/CONTRIBUTOR/REVIEWER relationship for that delivery.
 
 ### Provenance is mandatory
 Every important requirement must trace to human statement, enterprise artifact, policy, observation, decision, assumption or explicit AI inference.
@@ -99,6 +107,9 @@ A decision captures question, alternatives, outcome, rationale, owner, participa
 
 ### Readiness is deterministic
 The LLM can suggest missing work, but code determines whether a Delivery Subject is ready.
+
+### OpenCode is disposable execution state
+Firestore is authoritative. OpenCode sessions/local storage may be lost or stale and must be recreatable from Firestore-backed context.
 
 ## 8. Functional requirements
 
@@ -115,7 +126,7 @@ The system queries configured KnowledgeProviders and links relevant concepts, gl
 AI proposes affected perspectives with rationale and confidence. Delivery Lead confirms, removes or adds perspectives.
 
 ### FR-5 Assign humans
-Each perspective supports OWNER, DELEGATE, CONTRIBUTOR and REVIEWER relationships.
+Each perspective supports OWNER, DELEGATE, CONTRIBUTOR and REVIEWER relationships. Expertise hints may suggest candidates but cannot establish authority automatically.
 
 ### FR-6 Run smart drills
 The system asks targeted questions based on ownership relevance, uncertainty, criticality, dependencies, contradictions, missing acceptance criteria and confidence deficits.
@@ -165,7 +176,25 @@ See `docs/DOMAIN_MODEL.md` and `src/domain/readiness.ts`.
 Export machine-readable JSON and human-readable Markdown from the same domain state.
 
 ### FR-18 War-room observability
-Expose workflow state, waits, model/tool calls, retries, structured outputs, schema failures and domain mutations.
+Expose workflow state, waits, model/tool calls, retries, structured outputs, schema failures, context/hydration metadata and domain mutations.
+
+### FR-19 Admin/configuration UI
+An ADMIN can manage PoC user profiles, global application roles, role templates and perspective templates/catalogue through UI/backend APIs. A Delivery Lead/Admin can manage Delivery Subject perspective assignments.
+
+The P0 admin model is specified in `docs/ADMIN_UI.md`.
+
+### FR-20 OpenCode/Firestore state synchronization
+For every meaningful OpenCode run the backend must:
+- load current authoritative Firestore state;
+- resolve or recreate the OpenCode session;
+- compare Delivery Subject revision to AgentThread `lastContextRevision`;
+- inject bounded current context whenever state changed;
+- persist user-visible message continuity independently of OpenCode disk;
+- schema-validate outputs;
+- reject stale/duplicate mutations using revisions/idempotency;
+- update AgentThread/run metadata after completion.
+
+There is no wholesale replication of OpenCode local disk/database to Firestore. Detailed mechanics are defined in `docs/OPENCODE_STATE_SYNC.md`.
 
 ## 9. UI requirements
 
@@ -215,7 +244,10 @@ Shows deterministic checks with blockers and next actionable item.
 Human-readable package plus JSON/Markdown export.
 
 ### Screen: War Room
-Shows workflow state, agent activity, waits, traces, retries, quality indicators and rerun controls.
+Shows workflow state, agent activity, waits, traces, retries, context revision/hydration mode, quality indicators and rerun controls.
+
+### Screen group: Admin
+Admin Overview, Users, User Detail, Role Templates, Perspective Catalogue and Delivery Subject Assignment UI as defined in `docs/ADMIN_UI.md`.
 
 ## 10. Smart drill prioritization
 
@@ -253,7 +285,8 @@ The exact weights are configurable and should be tuned during war-room testing.
 ### Delivery Lead
 - I can see covered/unassigned/blocked perspectives.
 - I can see blockers by severity.
-- I can reassign a question.
+- I can assign/reassign OWNER/DELEGATE/CONTRIBUTOR/REVIEWER.
+- I can use expertise hints as suggestions without granting authority automatically.
 - I can record decisions.
 - I can reopen a requirement/perspective after new evidence.
 - I can see exactly why readiness is blocked.
@@ -274,13 +307,20 @@ The exact weights are configurable and should be tuned during war-room testing.
 
 ### War-room Operator
 - I can trace orchestration and model/tool activity.
+- I can see OpenCode session generation, domain/context revisions and hydration mode.
 - I can classify a failure and rerun affected analysis after prompt/config changes.
+
+### Admin
+- I can manage PoC users without editing Firestore manually.
+- I can assign global application roles.
+- I can manage role templates and perspective templates/catalogue.
+- I can deactivate users/templates while preserving historical audit references.
 
 ## 12. Readiness baseline
 
 A Delivery Subject cannot be READY while any of the following remain true:
 - problem/outcome is missing;
-- required perspective lacks accountable human;
+- required perspective lacks accountable OWNER/DELEGATE;
 - critical requirement lacks authoritative verification;
 - blocking gap/conflict is open;
 - major assumption has no explicit status/owner;
@@ -289,6 +329,8 @@ A Delivery Subject cannot be READY while any of the following remain true:
 - critical requirement lacks acceptance criteria;
 - required eval is missing;
 - cross-package dependency is unresolved/unowned.
+
+Global application roles, role templates and expertise hints do not satisfy perspective ownership readiness.
 
 ## 13. PoC metrics
 
@@ -309,6 +351,7 @@ War-room qualitative:
 - did the user understand why they were involved?
 - did AI interpret the answer correctly?
 - was context missing or excessive?
+- did stale-session recovery preserve correct current state?
 
 ## 14. Final handoff contract
 
