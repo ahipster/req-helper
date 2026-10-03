@@ -1,0 +1,23 @@
+{
+  "name": "req-helper",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev:graph": "langgraphjs dev"
+  },
+  "dependencies": {
+    "@langchain/core": "latest",
+    "@langchain/langgraph": "^1.4.18",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@langchain/langgraph-cli": "latest",
+    "@types/node": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}
