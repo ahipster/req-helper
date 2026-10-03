@@ -30,6 +30,77 @@ export const userTaskInboxCollection = (
   db: Firestore = firestore,
 ) => usersCollection(db).doc(userId).collection("taskInbox");
 
+export const taskInboxItemRef = (
+  userId: string,
+  itemId: string,
+  db: Firestore = firestore,
+) => userTaskInboxCollection(userId, db).doc(itemId);
+
+export type TaskInboxProjectionInput = {
+  id: string;
+  userId: string;
+  deliverySubjectId: string;
+  taskId: string;
+  subjectTitle: string;
+  perspectiveId?: string;
+  type: string;
+  title: string;
+  blocking: boolean;
+  status: string;
+};
+
+/**
+ * Use from the same Firestore transaction that changes an authoritative Task
+ * whenever practical. The projection is never read back to make domain
+ * decisions.
+ */
+export function upsertTaskInboxItemInTransaction(
+  tx: Transaction,
+  item: TaskInboxProjectionInput,
+): void {
+  tx.set(
+    taskInboxItemRef(item.userId, item.id),
+    {
+      ...item,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+export function deleteTaskInboxItemInTransaction(
+  tx: Transaction,
+  userId: string,
+  itemId: string,
+): void {
+  tx.delete(taskInboxItemRef(userId, itemId));
+}
+
+/**
+ * Membership removal/deactivation must remove subject-specific inbox entries.
+ * PoC batches are intentionally bounded below Firestore's write-batch limit.
+ */
+export async function deleteSubjectTaskInboxItems(
+  userId: string,
+  subjectId: string,
+): Promise<number> {
+  let deleted = 0;
+
+  for (;;) {
+    const snapshot = await userTaskInboxCollection(userId)
+      .where("deliverySubjectId", "==", subjectId)
+      .limit(400)
+      .get();
+
+    if (snapshot.empty) return deleted;
+
+    const batch = firestore.batch();
+    for (const doc of snapshot.docs) batch.delete(doc.ref);
+    await batch.commit();
+    deleted += snapshot.size;
+  }
+}
+
 export const subjectRef = (db: Firestore, subjectId: string) =>
   db.collection("deliverySubjects").doc(subjectId);
 
