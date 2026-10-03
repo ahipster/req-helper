@@ -70,7 +70,10 @@ const context: DeliverySubjectArchitectureContext = {
   updatedAt: now,
 };
 
-const confirmedElement = (stableKey: string, reviewStatus: "CONFIRMED" | "NEEDS_REVIEW" = "CONFIRMED"): ArchitectureElement => ({
+const confirmedElement = (
+  stableKey: string,
+  reviewStatus: "CONFIRMED" | "NEEDS_REVIEW" = "CONFIRMED",
+): ArchitectureElement => ({
   id: `element-${stableKey}`,
   baselineId: "ab-9",
   baselineVersion: 9,
@@ -92,7 +95,13 @@ const confirmedElement = (stableKey: string, reviewStatus: "CONFIRMED" | "NEEDS_
   createdAt: now,
 });
 
-const impactFor = (requirementId: string, revision: number, stableKey: string): RequirementArchitectureImpact => ({
+const impactFor = (
+  requirementId: string,
+  revision: number,
+  stableKey: string,
+  confirmer = "u-architect",
+  perspectiveId = "p-architecture",
+): RequirementArchitectureImpact => ({
   id: `impact-${requirementId}`,
   deliverySubjectId: deliverySubject.id,
   requirementId,
@@ -104,7 +113,8 @@ const impactFor = (requirementId: string, revision: number, stableKey: string): 
   rationale: "The requirement changes behavior realized by this application component.",
   sourceRelationshipIds: [],
   status: "CONFIRMED",
-  confirmedBy: "u-architect",
+  confirmedBy: confirmer,
+  confirmedPerspectiveId: perspectiveId,
   createdAt: now,
   updatedAt: now,
 });
@@ -124,7 +134,7 @@ describe("architecture-aware readiness", () => {
     ).toBe(false);
   });
 
-  it("requires confirmed current-revision architecture impact for high/critical requirements", () => {
+  it("requires authoritative confirmed current-revision architecture impact for high/critical requirements", () => {
     const result = evaluateReadiness({
       ...baseSnapshot(),
       architecturePolicy: policy,
@@ -132,6 +142,32 @@ describe("architecture-aware readiness", () => {
       architectureElements: [confirmedElement("app.customer-mdm")],
       architectureImpacts: [],
     });
+    expect(
+      result.checks.find((check) => check.code === "CRITICAL_REQUIREMENTS_HAVE_ARCHITECTURE_IMPACT")?.passed,
+    ).toBe(false);
+  });
+
+  it("does not accept impact confirmation from someone without active OWNER/DELEGATE authority", () => {
+    const impacts = requirements.map((requirement, index) =>
+      impactFor(
+        requirement.id,
+        requirement.revision,
+        `app.target-${index}`,
+        "u-product",
+        "p-architecture",
+      ),
+    );
+    const result = evaluateReadiness({
+      ...baseSnapshot(),
+      architecturePolicy: policy,
+      architectureContext: context,
+      architectureElements: requirements.map((_, index) => confirmedElement(`app.target-${index}`)),
+      architectureImpacts: impacts,
+    });
+
+    expect(
+      result.checks.find((check) => check.code === "ARCHITECTURE_IMPACT_CONFIRMATIONS_AUTHORIZED")?.passed,
+    ).toBe(false);
     expect(
       result.checks.find((check) => check.code === "CRITICAL_REQUIREMENTS_HAVE_ARCHITECTURE_IMPACT")?.passed,
     ).toBe(false);
