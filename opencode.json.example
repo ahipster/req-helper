@@ -1,0 +1,11 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "providers": {
+    "google-vertex": {
+      "settings": {
+        "project": "YOUR_GCP_PROJECT_ID",
+        "location": "europe-west4"
+      }
+    }
+  }
+}

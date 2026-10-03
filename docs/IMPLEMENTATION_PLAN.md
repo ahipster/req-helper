@@ -2,268 +2,265 @@
 
 ## Goal
 
-Deliver one complete vertical slice that can be exercised aggressively in the following war-room week.
+Deliver one complete collaborative vertical slice that can be exercised aggressively during the following war-room week.
 
-The priority is **learning whether the requirements-orchestration model works in practice**, not platform completeness.
+The priority is learning whether the requirements-orchestration model works in practice, not platform completeness.
 
 ## P0 definition
 
-By end of week, one seeded real-world signal must be able to:
+By end of week, one seeded signal must support:
 
 1. create a Delivery Subject;
 2. clarify outcome/problem;
 3. identify/confirm perspectives;
-4. assign humans;
-5. generate targeted drill questions;
-6. capture human answers and extract contributions;
-7. synthesize/update structured requirements;
+4. assign multiple humans;
+5. open independent participant drill threads;
+6. persist answers in Firestore;
+7. use OpenCode to extract contributions and synthesize requirements;
 8. detect gaps/conflicts/assumptions;
 9. route follow-up/verification tasks;
-10. link enterprise knowledge and proposed diffs;
-11. split requirements into work packages;
-12. generate acceptance criteria and eval definitions;
-13. compute deterministic readiness;
-14. export final JSON/Markdown package;
-15. expose orchestration traces in a war-room view.
+10. show realtime changes to other logged-in users;
+11. link enterprise knowledge and proposed diffs;
+12. split requirements into work packages;
+13. generate acceptance criteria and eval definitions;
+14. compute deterministic readiness;
+15. export final JSON/Markdown package;
+16. expose agent/domain traces in a war-room view.
 
-## Day 1 — Domain spine
+## Day 1 — GCP/domain spine
 
 ### Deliverables
-- project bootstrap;
-- PostgreSQL connection/migrations;
-- core schemas/entities;
-- repository layer;
+- Next.js/TypeScript project bootstrap;
+- Firebase Admin + browser Firestore configuration;
+- Firestore emulator/local configuration where feasible;
+- core Zod/domain schemas;
+- Firestore repository layer;
 - Delivery Subject API;
-- Perspective model;
-- Requirement model with revisions/sources;
-- append-only domain event table;
+- Perspective, Assignment, Task and Requirement models;
+- append-only Event collection;
 - readiness evaluator skeleton;
-- seed data loader.
+- seed loader.
 
 ### Acceptance
-- can create/read Delivery Subject;
-- original signal is immutable;
-- can add perspectives/assignments;
-- can create requirement with provenance;
-- every mutation writes audit event;
-- domain tests run locally.
+- create/read Delivery Subject;
+- original signal preserved;
+- add perspectives/assignments;
+- create requirement with provenance;
+- every important mutation writes audit event;
+- domain tests run.
 
-## Day 2 — UX shell + task model
+## Day 2 — Realtime multi-user UX
 
 ### Deliverables
-- application shell/navigation;
-- My Work screen;
-- New Signal screen;
+- app shell/navigation;
+- My Work;
+- New Signal;
 - Delivery Overview;
-- Drill Workspace 3-pane shell;
+- 3-pane Drill Workspace;
 - Requirements view;
-- Task model/API;
-- simple mocked identity picker if real SSO is not trivial;
-- streaming chat surface via assistant-ui or equivalent.
+- assistant-ui conversation surface;
+- identity/persona mechanism;
+- Firestore listeners for subject summary, tasks, requirements and blockers.
 
 ### Acceptance
-- seeded users can switch roles;
-- each user sees only assigned/related tasks by default;
-- Delivery Subject remains visible as structured context outside chat;
-- human response is persisted independently from model output.
+- two browser sessions/users can view the same Delivery Subject;
+- each sees only relevant work by default;
+- update by one participant appears live in the other view;
+- structured Delivery Subject state is visible outside chat;
+- client cannot directly bypass protected domain mutation rules.
 
-## Day 3 — First agentic loop
+## Day 3 — OpenCode harness
 
 ### Deliverables
-- ModelGateway interface + one configured provider;
-- prompt/version infrastructure;
-- LangGraph or equivalent graph with:
-  - plan_drill;
-  - ask_human interrupt;
-  - extract_contributions;
-  - synthesize_requirements;
-  - assess_gaps_conflicts;
-- Zod schemas for every AI output;
-- orchestration run/step trace persistence.
+- AgentHarness interface;
+- OpenCode adapter using `@opencode-ai/sdk`;
+- AgentThread persistence;
+- thread key: deliverySubject + perspective + participant;
+- session recreation from Firestore context;
+- one-active-run-per-thread lease;
+- Vertex provider configuration;
+- structured output validation;
+- agentRun trace persistence.
 
 ### Acceptance
-- graph can stop waiting for human and resume;
-- one human answer can produce multiple contributions;
-- contributions retain raw source linkage;
-- proposed requirements validate before persistence;
-- invalid structured output retries/fails visibly;
-- graph loops to another drill when information is missing.
+- independent users can run separate OpenCode threads concurrently;
+- same thread rejects/queues concurrent prompt attempts;
+- lost OpenCode session can be recreated;
+- one human answer can create multiple validated contributions;
+- invalid AI output cannot mutate authoritative state.
 
-## Day 4 — Multi-perspective convergence
+## Day 4 — Convergence loops
 
 ### Deliverables
-- perspective proposal/confirmation;
 - contribution verification flow;
-- gap/assumption/conflict records;
-- conflict/decision screen;
-- cross-perspective synthesis;
+- requirement synthesis/revision commands;
+- gaps, assumptions, conflicts and decisions;
 - targeted follow-up routing;
+- Bigger Picture view;
 - "I don't know" and "ask someone" actions;
-- Bigger Picture view.
+- rerun/idempotency handling.
 
 ### Acceptance
-- non-owner contribution is preserved but remains unverified;
+- non-owner knowledge is preserved but unverified;
 - owner can verify/reject/amend;
-- contradiction creates explicit Conflict object;
-- decision requires named human owner;
-- new evidence can reopen affected requirement/perspective.
+- contradiction creates explicit Conflict;
+- decision requires human owner;
+- reruns do not duplicate requirements blindly;
+- stale AI commands are rejected or retried when domain revision changed.
 
-## Day 5 — Enterprise context + work-package split
+## Day 5 — Enterprise context + package split
 
 ### Deliverables
 - KnowledgeProvider contract;
 - SeedKnowledgeProvider;
-- optional one real adapter if trivial in environment;
-- knowledge search/link UI;
-- proposed diff records/rendering;
-- impact analysis node;
-- work-package split node/service;
-- dependency records.
+- optional one real adapter;
+- knowledge link UI;
+- proposed diffs;
+- impact analysis;
+- work-package split;
+- dependencies.
 
 ### Acceptance
-- Delivery Subject links to representative enterprise artifacts;
-- each reference shows source metadata;
-- proposed impacts never overwrite source artifact;
-- requirements can split across multiple areas;
-- cross-area dependencies remain visible.
+- linked references keep source metadata;
+- AI impacts never overwrite source systems;
+- requirements can span multiple areas;
+- dependencies remain visible.
 
-## Day 6 — Acceptance, evals, readiness, package
+## Day 6 — Acceptance, evals, readiness, exports
 
 ### Deliverables
-- acceptance-criteria generator/service;
-- eval-definition generator/service;
-- readiness evaluator completed;
+- acceptance criteria generation;
+- eval definition generation;
+- deterministic readiness complete;
 - Readiness screen;
 - work-package detail;
-- final package view;
+- Final Package;
 - JSON + Markdown export.
 
 ### Acceptance
-- critical requirements without ACs block readiness;
-- open blocking conflicts/gaps block readiness;
-- missing critical perspective ownership blocks readiness;
-- package export is generated from persisted domain state, not from one LLM prompt;
-- reverse traceability works from package item to source evidence.
+- blocking conflict/gap prevents READY;
+- missing required perspective owner prevents READY;
+- critical requirement without AC blocks READY;
+- export is constructed from Firestore domain state, not a final free-form prompt;
+- reverse traceability works.
 
-## Day 7 — War-room hardening
+## Day 7 — GCP + war-room hardening
 
 ### Deliverables
+- Cloud Run container/config;
+- Firestore rules/indexes reviewed;
+- workload identity / ADC config for Vertex/OpenCode;
 - War Room screen;
-- trace replay/rerun hooks where safe;
-- failure categorization;
-- prompt/config version display;
-- realistic seed scenario and scripted personas;
-- E2E smoke path;
-- instrumentation for PoC metrics;
-- Docker/container/local setup docs;
-- known limitations list.
+- run/event diagnostics;
+- realistic seed personas;
+- E2E smoke scenario;
+- metrics instrumentation;
+- documented known limitations.
 
 ### Acceptance
-- operator can see whether a stuck run is waiting for human vs failed;
-- model/schema/tool errors are visible;
-- rerunning analysis does not duplicate domain objects blindly;
-- seeded scenario can complete end-to-end;
-- one command or documented minimal sequence starts the PoC.
+- operator distinguishes waiting-human vs harness/model/domain failure;
+- OpenCode restart/session loss is recoverable;
+- two or more simultaneous users complete independent drills;
+- seeded scenario completes end-to-end;
+- deployment has no dependency on local PostgreSQL/LangGraph state.
 
-## War-room week operating model
+## Firestore-specific rules
 
-Do not treat observed failures as "prompt problems" by default.
+1. Do not put growing arrays of requirements/messages/events on the Delivery Subject document.
+2. Use subcollections for growing data.
+3. Use transactions for read-modify-write invariants.
+4. Use deterministic IDs/idempotency keys for AI proposals where practical.
+5. Add composite indexes only for real queries used by the UI.
+6. Avoid broad realtime subscriptions; subscribe to relevant slices.
+7. Keep large source documents outside Firestore and store reference/summary metadata.
+8. Keep a `revision` field on the Delivery Subject and/or affected records for stale-command detection.
+9. Store human text and AI outputs separately from authoritative normalized records when needed for audit.
+10. Security Rules protect browser access; server-side commands remain authoritative.
 
-Classify every failure:
+## OpenCode-specific rules
 
-```text
-MODEL        model capability/reliability
-PROMPT       unclear/incorrect instruction
-CONTEXT      wrong amount/selection/structure of context
-KNOWLEDGE    missing/stale/incorrect enterprise source
-WORKFLOW     wrong sequencing/routing/wait behavior
-DOMAIN_MODEL missing/incorrect business concept or invariant
-UX           user cannot understand/perform the task efficiently
-OWNERSHIP    wrong/missing authoritative human
-```
-
-For each war-room session record:
-- scenario/run ID;
-- failure category;
-- observed symptom;
-- root-cause hypothesis;
-- change made;
-- expected effect;
-- result after rerun;
-- whether the change should survive PoC.
+1. OpenCode is an executor, not system of record.
+2. One active run per AgentThread.
+3. Session IDs are recoverable metadata.
+4. Context is reconstructed from Firestore on every meaningful run.
+5. Tools exposed to OpenCode are allowlisted.
+6. Structured output is schema-validated before application commands.
+7. Store run metadata for replay/debugging, not hidden chain-of-thought.
 
 ## Deliberate shortcuts
 
 ### Knowledge
-Use 20–100 representative artifacts. Do not integrate every repository.
+Use 20–100 representative artifacts.
 
 ### Identity
-Use existing SSO only if already simple; otherwise mock named personas/roles clearly.
+Use enterprise SSO only if trivial; otherwise Firebase/Identity Platform or named personas for the PoC.
 
 ### Notifications
 In-app task inbox only.
 
 ### Search
-Start with PostgreSQL text search or deterministic seed lookup. Add embeddings only when a concrete retrieval failure proves the need.
+Start with deterministic/Firestore queries and source adapters. Add semantic retrieval only when a concrete failure proves need.
 
 ### Orchestration
-One bounded LangGraph. Do not build a generic orchestration platform.
+No LangGraph. Persist tasks/state and use ordinary application control flow around OpenCode.
 
 ### Infrastructure
-One deployable app + PostgreSQL. Avoid microservices.
+Cloud Run + Firestore + OpenCode + Vertex AI. Avoid additional infrastructure unless required.
 
 ### Diffs
-Structured JSON + readable rendering. No reconciliation/write-back yet.
+Structured data + readable rendering. No authoritative reconciliation/write-back yet.
 
-## Implementation backlog
+## P0 backlog
 
-### P0 — must complete
+- [ ] Firestore config/emulator
 - [ ] DeliverySubject CRUD
 - [ ] Perspective + assignment
 - [ ] Task inbox
-- [ ] Drill workspace
-- [ ] ModelGateway
-- [ ] plan_drill node
-- [ ] human interrupt/resume
+- [ ] realtime subscriptions
+- [ ] Drill Workspace
+- [ ] assistant-ui integration
+- [ ] AgentHarness
+- [ ] OpenCode adapter
+- [ ] Vertex provider config
+- [ ] AgentThread/session mapping
+- [ ] thread lease/concurrency guard
 - [ ] contribution extraction
 - [ ] contribution verification
 - [ ] requirement synthesis/revisions
-- [ ] provenance links
-- [ ] gaps
-- [ ] assumptions
-- [ ] conflicts
-- [ ] decisions
+- [ ] provenance
+- [ ] gaps/assumptions/conflicts/decisions
 - [ ] knowledge adapter + seed provider
 - [ ] proposed diffs
-- [ ] work packages
-- [ ] dependencies
+- [ ] work packages/dependencies
 - [ ] acceptance criteria
 - [ ] eval definitions
 - [ ] deterministic readiness
 - [ ] package export
-- [ ] orchestration trace persistence
+- [ ] agent/domain event traces
 - [ ] war-room view
 - [ ] demo seed
+- [ ] Firestore rules/indexes
+- [ ] Cloud Run deployment
 - [ ] core tests
 
-### P1 — only after vertical slice works
-- [ ] semantic retrieval/embeddings
-- [ ] one real MCP enterprise adapter
-- [ ] richer requirement diff UI
-- [ ] parallel perspective orchestration optimization
-- [ ] package approval workflow
-- [ ] basic notification integration
-- [ ] reusable prompt-eval dataset
-- [ ] per-perspective drill quality analytics
+## P1 only after vertical slice
 
-### Future
-- [ ] authoritative reconciliation into enterprise repositories
-- [ ] downstream SDLC MCP/API handoff automation
-- [ ] enterprise SSO/RBAC hardening
-- [ ] Camunda/Temporal migration if durable enterprise orchestration requires it
-- [ ] full portfolio-level dependency graph
-- [ ] organizational learning/reuse across Delivery Subjects
+- semantic retrieval/embeddings;
+- real MCP enterprise adapter;
+- richer diff UI;
+- notifications;
+- reusable prompt/eval dataset;
+- drill quality analytics;
+- package approval workflow.
+
+## Future
+
+- authoritative reconciliation into enterprise repositories;
+- downstream SDLC MCP/API automation;
+- production enterprise SSO/RBAC;
+- alternative durable workflow engine only if a concrete scaling/governance need appears;
+- relational/event warehouse projection if analytics or cross-subject joins outgrow Firestore.
 
 ## Coding-agent instruction
 
-Do not wait for every screen or integration to be perfect before wiring the vertical slice. Every day should end with a runnable path that extends the previous day's path. If a dependency is unavailable, implement the adapter interface and a seed/mock implementation so the end-to-end flow remains testable.
+Every day must end with a runnable vertical path. If an external dependency is unavailable, keep the domain contract and use a seed/mock adapter rather than blocking the entire slice.
