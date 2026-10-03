@@ -242,16 +242,26 @@ export const RequirementArchitectureImpactSchema = z
     sourceRelationshipIds: z.array(z.string()).default([]),
     status: z.enum(["PROPOSED", "CONFIRMED", "REJECTED", "STALE_BASELINE"]),
     confirmedBy: z.string().optional(),
+    confirmedPerspectiveId: z.string().optional(),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
   .superRefine((impact, ctx) => {
-    if (impact.status === "CONFIRMED" && !impact.confirmedBy) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["confirmedBy"],
-        message: "A CONFIRMED architecture impact requires confirmedBy.",
-      });
+    if (impact.status === "CONFIRMED") {
+      if (!impact.confirmedBy) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["confirmedBy"],
+          message: "A CONFIRMED architecture impact requires confirmedBy.",
+        });
+      }
+      if (!impact.confirmedPerspectiveId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["confirmedPerspectiveId"],
+          message: "A CONFIRMED architecture impact requires confirmedPerspectiveId.",
+        });
+      }
     }
   });
 
