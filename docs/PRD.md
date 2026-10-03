@@ -120,7 +120,7 @@ Human response is durable before AI processing begins.
 
 ### FR-9 Maintain My Work read projection
 
-Authoritative tasks live under `deliverySubjects/{subjectId}/tasks/{taskId}`. For realtime cross-subject My Work, the backend maintains `users/{userId}/taskInbox/{itemId}`.
+Authoritative tasks live under `deliverySubjects/{subjectId}/tasks/{taskId}`. For realtime cross-subject My Work, the backend maintains `users/{userId}/inbox/{itemId}`.
 
 The projection:
 
@@ -252,7 +252,7 @@ GET /api/delivery-subjects/{id}/work-packages/{workPackageId}
 
 ### My Work
 
-Shows the current user's taskInbox projection: blocking/open tasks, reviews, processing/waiting state and relevant subject labels. Opening an item loads the authoritative Task and subject. No fake role switcher in production UI; PoC persona switching is clearly marked developer/test-only if present.
+Shows the current user's inbox projection: blocking/open tasks, reviews, processing/waiting state and relevant subject labels. Opening an item loads the authoritative Task and subject. No fake role switcher in production UI; PoC persona switching is clearly marked developer/test-only if present.
 
 ### New Signal
 
