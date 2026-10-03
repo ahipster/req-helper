@@ -7,6 +7,7 @@ import type {
   ArchitectureSourceEvidence,
   ArchitectureView,
 } from "../domain/architecture.js";
+import type { UntrustedModelInputPolicy } from "../domain/source-security.js";
 
 export type GitMarkdownDocument = {
   sourceId: string;
@@ -37,11 +38,18 @@ export interface ArchitectureGitReader {
 }
 
 /**
- * The normalizer may use an LLM/agent harness. Its output is always treated as
- * a proposal until deterministic validation/reconciliation has run.
+ * The caller must authorize the source and model-processing permission before
+ * invoking the normalizer. Markdown content is untrusted data. The normalizer
+ * receives an explicit security policy that forbids source-instruction
+ * following, tools and network access for architecture ingestion.
+ *
+ * Output is always a proposal until deterministic validation/reconciliation.
  */
 export interface ArchitectureMarkdownNormalizer {
-  extract(document: GitMarkdownDocument): Promise<ArchitectureDocumentExtraction>;
+  extract(
+    document: GitMarkdownDocument,
+    securityPolicy: UntrustedModelInputPolicy,
+  ): Promise<ArchitectureDocumentExtraction>;
 }
 
 export type ArchitectureReconciliationInput = {
