@@ -4,19 +4,29 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "emulators": "firebase emulators:start"
   },
   "dependencies": {
     "@assistant-ui/react": "latest",
     "@opencode-ai/sdk": "latest",
     "firebase": "latest",
     "firebase-admin": "latest",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
     "zod": "latest"
   },
   "devDependencies": {
     "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "firebase-tools": "latest",
     "typescript": "latest",
     "vitest": "latest"
   }
