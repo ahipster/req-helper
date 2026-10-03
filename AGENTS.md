@@ -26,9 +26,9 @@ Do not preserve contradictory legacy fields for convenience.
 4. Global roles/job titles/expertise hints never imply Delivery Subject authority.
 5. OWNER/DELEGATE can satisfy authoritative verification; REVIEWER is advisory.
 6. Human contributions and authoritative verification are separate concepts.
-7. Verification is immutable and revision-bound.
-8. Every semantic Requirement edit creates RequirementRevision and current-revision RequirementSource records as appropriate.
-9. Prior-revision verification cannot satisfy current-revision readiness.
+7. Verification is append-only human judgment and revision-bound where applicable; do not reintroduce scalar verification status on Requirement/Contribution.
+8. Every semantic Requirement edit creates RequirementRevision and revision-bound RequirementSource records as appropriate.
+9. Prior-revision verification/acceptance/evals cannot satisfy a newer requirement revision.
 10. Conflicts are N-party and contain positions, not fixed itemA/itemB pairs.
 11. Readiness criteria are deterministic functions over persisted state.
 12. Enterprise knowledge is linked through adapters; do not build a generic knowledge graph.
@@ -40,6 +40,7 @@ Do not preserve contradictory legacy fields for convenience.
 18. OpenCode sessions must be recreatable from Firestore-backed context.
 19. Privileged domain writes go through validated server application commands.
 20. Large source files live in GCS/external systems; Firestore stores metadata/URI.
+21. `users/{uid}/taskInbox` is a rebuildable read projection only; authoritative Task lives under the Delivery Subject.
 
 ## Semantic definitions
 
@@ -68,6 +69,22 @@ Any nonterminal -> CANCELLED
 
 Human input is persisted before PROCESSING.
 
+### My Work
+
+Do not implement browser `collectionGroup("tasks")` for My Work. Maintain a private per-user projection:
+
+```text
+users/{uid}/taskInbox/{itemId}
+```
+
+Projection rules:
+
+- authoritative Task remains under the subject;
+- task create/reassign/status change updates the projection;
+- membership removal/deactivation removes that subject's projection entries for the user;
+- opening an item reloads/re-authorizes authoritative Task/subject;
+- browser never writes projection documents.
+
 ### Work package destination
 
 `targetAreaRef` identifies the implementation area. `targetTeamId` and human `coordinatorId` are optional separate fields.
@@ -75,6 +92,8 @@ Human input is persisted before PROCESSING.
 ### Acceptance/eval targets
 
 May target `REQUIREMENT`, `WORK_PACKAGE`, or `DELIVERY_SUBJECT`.
+
+For `REQUIREMENT`, `targetRevision` is mandatory and must match the current Requirement revision to count for readiness.
 
 ## OpenCode execution discipline
 
@@ -97,7 +116,7 @@ authorize user/subject
  -> apply idempotent domain commands transactionally
  -> append revisions/provenance/events/verifications as appropriate
  -> persist domainRevisionAtEnd separately
- -> update task/follow-up state
+ -> update authoritative task/follow-up state + taskInbox projection
  -> release lease
 ```
 
@@ -116,7 +135,7 @@ A semantic change must:
 3. update current Requirement and increment revision;
 4. persist new RequirementSource links;
 5. preserve old Verification for audit but make it ineligible for new revision;
-6. reassess revision-bound acceptance/evals;
+6. make old requirement-targeted acceptance/evals ineligible;
 7. reassess dependent conflicts/gaps;
 8. append domain event.
 
@@ -141,7 +160,8 @@ Conflict
 - Delivery Subject root contains bounded summary fields only;
 - growing data/history/relations are separate documents/subcollections;
 - use membership-aware browser reads;
-- use transactions for invariant-sensitive read-modify-write;
+- My Work reads only the current user's `taskInbox` projection;
+- use transactions/batches for invariant-sensitive changes and projection cleanup;
 - deterministic IDs/idempotency keys for AI proposal application;
 - track revisions to reject stale commands;
 - append audit events for meaningful mutations;
@@ -154,7 +174,7 @@ Required subcollections include members, sourceArtifacts, evidence, verification
 1. Firestore + canonical schema/domain services.
 2. Delivery Subject + scope/source artifacts.
 3. Membership + perspective assignment/admin.
-4. Task inbox + realtime collaboration.
+4. Authoritative Task + private taskInbox projection + realtime collaboration.
 5. assistant-ui drill workspace.
 6. AgentThread/OpenCode/Vertex + session recovery.
 7. Contribution/Evidence extraction.
@@ -163,7 +183,7 @@ Required subcollections include members, sourceArtifacts, evidence, verification
 10. Gap/Assumption/N-party Conflict/Decision loops.
 11. KnowledgeReference/ProposedDiff.
 12. WorkPackage target area/dependencies.
-13. generalized acceptance/evals.
+13. generalized revision-aware acceptance/evals.
 14. deterministic readiness.
 15. requirement history + final package/read APIs.
 16. War Room + recovery/idempotency/concurrency tests.
@@ -193,12 +213,15 @@ Failures: `MODEL | PROMPT | CONTEXT | KNOWLEDGE | WORKFLOW | DOMAIN_MODEL | UX |
 - required proposed perspective blocks readiness;
 - required medium-criticality perspective still needs OWNER/DELEGATE;
 - old requirement verification does not satisfy new revision;
+- old requirement-targeted acceptance/eval does not satisfy new revision;
 - unresolved blocking dependency blocks even when owned;
 - blocking task remains a blocker until COMPLETED/CANCELLED;
 - manual edit creates revision and invalidates old verification;
 - 3-party conflict persists all positions;
 - Reviewer cannot authoritatively verify by role alone;
 - non-member cannot read subject state;
+- My Work reads only current user's taskInbox projection;
+- membership removal cleans up subject inbox items;
 - lost OpenCode session rehydrates;
 - same-run end revision is not falsely marked as presented;
 - duplicate retry is idempotent;
@@ -206,6 +229,10 @@ Failures: `MODEL | PROMPT | CONTEXT | KNOWLEDGE | WORKFLOW | DOMAIN_MODEL | UX |
 - same thread cannot execute concurrently;
 - human answer survives model failure;
 - package API/export traces final items back to source/provenance.
+
+## Validation discipline
+
+Do not claim typecheck/tests pass unless they actually ran. GitHub Actions CI must run `npm run typecheck` and `npm test` on pull requests and `main`.
 
 ## Definition of done
 
