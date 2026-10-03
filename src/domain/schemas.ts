@@ -574,6 +574,23 @@ export const TaskSchema = z.object({
   updatedAt: z.string(),
 });
 
+// Realtime My Work reads a server-maintained projection under the current
+// user's profile. It is deliberately non-authoritative and must be deleted or
+// updated transactionally when task assignment/access changes.
+export const TaskInboxItemSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  deliverySubjectId: z.string(),
+  taskId: z.string(),
+  subjectTitle: z.string(),
+  perspectiveId: z.string().optional(),
+  type: TaskType,
+  title: z.string(),
+  blocking: z.boolean(),
+  status: TaskStatus,
+  updatedAt: z.string(),
+});
+
 export type DeliverySubject = z.infer<typeof DeliverySubjectSchema>;
 export type DeliverySubjectMembership = z.infer<typeof DeliverySubjectMembershipSchema>;
 export type Perspective = z.infer<typeof PerspectiveSchema>;
@@ -600,3 +617,4 @@ export type AcceptanceCriterion = z.infer<typeof AcceptanceCriterionSchema>;
 export type Evaluation = z.infer<typeof EvaluationSchema>;
 export type Dependency = z.infer<typeof DependencySchema>;
 export type Task = z.infer<typeof TaskSchema>;
+export type TaskInboxItem = z.infer<typeof TaskInboxItemSchema>;
