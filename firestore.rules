@@ -28,8 +28,6 @@ service cloud.firestore {
         allow write: if false;
       }
 
-      // Task rule is explicit so collection-group My Work queries are still
-      // evaluated against Delivery Subject membership.
       match /tasks/{taskId} {
         allow read: if isAdmin() || isSubjectMember(subjectId);
         allow write: if false;
@@ -39,6 +37,15 @@ service cloud.firestore {
         allow read: if isAdmin() || isSubjectMember(subjectId);
         allow write: if false;
       }
+    }
+
+    // Collection-group My Work queries need an explicit recursive rule. Each
+    // Task carries deliverySubjectId, which is checked against membership.
+    match /{path=**}/tasks/{taskId} {
+      allow read: if isAdmin()
+        || (resource.data.deliverySubjectId is string
+          && isSubjectMember(resource.data.deliverySubjectId));
+      allow write: if false;
     }
 
     // PoC profiles are readable to signed-in users so names/expertise can be
