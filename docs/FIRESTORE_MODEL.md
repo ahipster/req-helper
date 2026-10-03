@@ -6,13 +6,13 @@ Cloud Firestore is the authoritative shared state store for the Req Helper PoC. 
 
 ```text
 users/{userId}
-  /inbox/{projectionId}             # read-only My Work projection
+  /taskInbox/{itemId}               # read-only My Work projection
 roleTemplates/{roleTemplateId}
 perspectiveTemplates/{perspectiveTemplateId}
 deliverySubjects/{subjectId}
 ```
 
-The user inbox is a disposable read projection. The authoritative Task always remains under its Delivery Subject.
+The task inbox is a disposable read projection. The authoritative Task always remains under its Delivery Subject.
 
 ## Delivery Subject root
 
@@ -95,12 +95,12 @@ Use references/stable IDs rather than large nested objects or unbounded arrays.
 
 Global `DELIVERY_LEAD` capability does not grant access to every subject. Subject membership establishes actual participation in a specific Delivery Subject.
 
-## My Work inbox projection
+## My Work task-inbox projection
 
 A browser-wide collection-group Task query conflicts with strict subject-membership rules because Firestore security rules are not post-query filters. P0 therefore maintains:
 
 ```text
-users/{userId}/inbox/{projectionId}
+users/{userId}/taskInbox/{itemId}
 ```
 
 Projection shape:
@@ -111,13 +111,12 @@ Projection shape:
   userId,
   deliverySubjectId,
   taskId,
-  taskType,
-  taskStatus,
-  title,
+  subjectTitle,
   perspectiveId?,
+  type,
+  title,
   blocking,
-  deliverySubjectTitle,
-  deliverySubjectRevision,
+  status,
   updatedAt
 }
 ```
@@ -125,9 +124,12 @@ Projection shape:
 Rules:
 
 - authoritative Task remains `deliverySubjects/{subjectId}/tasks/{taskId}`;
-- backend services update/remove the inbox projection when assignment/status changes;
+- backend services update/remove the projection when assignment/status changes;
+- reassigning a task removes the old assignee projection and creates/updates the new one;
+- removing/deactivating subject membership removes that subject's inbox projections for the user as part of the same application operation/batch;
 - the projection may be rebuilt from authoritative tasks;
-- user may read only their own inbox (ADMIN may read under PoC policy);
+- user may read only their own task inbox (ADMIN may read under PoC policy);
+- opening an inbox item reloads the authoritative Task/subject and re-checks access;
 - no browser writes.
 
 ## Perspective and Assignment
@@ -204,7 +206,7 @@ Evidence has its own collection so contribution/requirement/conflict records do 
 
 ## Verification
 
-Verification is immutable and revision-bound where applicable.
+Verification is append-only human judgment and revision-bound where applicable.
 
 Targets:
 
@@ -366,8 +368,8 @@ WAITING_ON_OTHER | COMPLETED | CANCELLED
 Both use generalized target types:
 
 ```text
-REQUIREMENT     -> targetRevision required
-WORK_PACKAGE    -> no requirement revision
+REQUIREMENT      -> targetRevision required
+WORK_PACKAGE     -> no requirement revision
 DELIVERY_SUBJECT -> no requirement revision
 ```
 
@@ -463,7 +465,7 @@ May execute concurrently; domain revisions protect shared objects.
 
 Subscribe narrowly.
 
-- My Work: `users/{currentUser}/inbox`, filtered by taskStatus as needed.
+- My Work: `users/{currentUser}/taskInbox`, filtered by `status` as needed.
 - Delivery Overview: root summary + perspectives + blockers + recent events.
 - Drill Workspace: current task + thread messages + relevant requirements/conflicts.
 - Requirement detail: current requirement + revisions + sources + verifications + acceptance/evals.
@@ -473,6 +475,8 @@ Subscribe narrowly.
 ## Security/access
 
 Browser reads of Delivery Subject data are restricted by active Delivery Subject membership (or ADMIN policy). Admin/global-template access is governed separately.
+
+The task inbox projection is readable only by its owning user (and ADMIN under PoC policy), is not authoritative, and must be cleaned up when subject access is revoked.
 
 P0 authoritative writes remain backend-only. The browser never receives Firestore admin credentials or OpenCode/Vertex credentials.
 
