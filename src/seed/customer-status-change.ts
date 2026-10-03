@@ -57,22 +57,88 @@ export const deliverySubject: DeliverySubject = {
 };
 
 export const perspectives: Perspective[] = [
-  { id: "p-business", deliverySubjectId: deliverySubject.id, type: "BUSINESS", name: "Business outcome and rules", criticality: "HIGH", required: true, status: "IN_PROGRESS", rationale: "Clarify when channels may proceed automatically." },
-  { id: "p-data", deliverySubjectId: deliverySubject.id, type: "DATA", name: "Verification semantics and source of truth", criticality: "CRITICAL", required: true, status: "IN_PROGRESS", rationale: "Status meaning, ownership and lineage must be authoritative." },
-  { id: "p-architecture", deliverySubjectId: deliverySubject.id, type: "ARCHITECTURE", name: "System and integration architecture", criticality: "HIGH", required: true, status: "IN_PROGRESS", rationale: "Change crosses MDM, API and channel boundaries." },
-  { id: "p-security", deliverySubjectId: deliverySubject.id, type: "SECURITY", name: "Access and exposure", criticality: "HIGH", required: true, status: "CONFIRMED", rationale: "New consumers will see customer verification information." },
-  { id: "p-operations", deliverySubjectId: deliverySubject.id, type: "OPERATIONS", name: "Availability, monitoring and failure behavior", criticality: "HIGH", required: true, status: "CONFIRMED", rationale: "Downstream automation depends on runtime behavior." },
-  { id: "p-api", deliverySubjectId: deliverySubject.id, type: "API", name: "Customer API contract", criticality: "HIGH", required: true, status: "IN_PROGRESS", rationale: "A current API is the likely distribution point." },
+  {
+    id: "p-business",
+    deliverySubjectId: deliverySubject.id,
+    type: "BUSINESS",
+    name: "Business outcome and rules",
+    criticality: "HIGH",
+    required: true,
+    status: "IN_PROGRESS",
+    rationale: "Clarify when channels may proceed automatically.",
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: "p-data",
+    deliverySubjectId: deliverySubject.id,
+    type: "DATA",
+    name: "Verification semantics and source of truth",
+    criticality: "CRITICAL",
+    required: true,
+    status: "IN_PROGRESS",
+    rationale: "Status meaning, ownership and lineage must be authoritative.",
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: "p-architecture",
+    deliverySubjectId: deliverySubject.id,
+    type: "ARCHITECTURE",
+    name: "System and integration architecture",
+    criticality: "HIGH",
+    required: true,
+    status: "IN_PROGRESS",
+    rationale: "Change crosses MDM, API and channel boundaries.",
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: "p-security",
+    deliverySubjectId: deliverySubject.id,
+    type: "SECURITY",
+    name: "Access and exposure",
+    criticality: "HIGH",
+    required: true,
+    status: "CONFIRMED",
+    rationale: "New consumers will see customer verification information.",
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: "p-operations",
+    deliverySubjectId: deliverySubject.id,
+    type: "OPERATIONS",
+    name: "Availability, monitoring and failure behavior",
+    criticality: "HIGH",
+    required: true,
+    status: "CONFIRMED",
+    rationale: "Downstream automation depends on runtime behavior.",
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: "p-api",
+    deliverySubjectId: deliverySubject.id,
+    type: "API",
+    name: "Customer API contract",
+    criticality: "HIGH",
+    required: true,
+    status: "IN_PROGRESS",
+    rationale: "A current API is the likely distribution point.",
+    createdAt: now,
+    updatedAt: now,
+  },
 ];
 
 export const assignments: PerspectiveAssignment[] = [
-  { id: "a-business", perspectiveId: "p-business", userId: personas.product.id, relationship: "OWNER", status: "ACTIVE" },
-  { id: "a-data", perspectiveId: "p-data", userId: personas.data.id, relationship: "OWNER", status: "ACTIVE" },
-  { id: "a-arch", perspectiveId: "p-architecture", userId: personas.architect.id, relationship: "OWNER", status: "ACTIVE" },
-  { id: "a-security", perspectiveId: "p-security", userId: personas.security.id, relationship: "OWNER", status: "ACTIVE" },
-  { id: "a-ops", perspectiveId: "p-operations", userId: personas.operations.id, relationship: "OWNER", status: "ACTIVE" },
-  { id: "a-api", perspectiveId: "p-api", userId: personas.api.id, relationship: "OWNER", status: "ACTIVE" },
-  { id: "a-arch-data-contrib", perspectiveId: "p-data", userId: personas.architect.id, relationship: "CONTRIBUTOR", status: "ACTIVE" },
+  { id: "a-business", perspectiveId: "p-business", userId: personas.product.id, relationship: "OWNER", status: "ACTIVE", createdAt: now, updatedAt: now },
+  { id: "a-data", perspectiveId: "p-data", userId: personas.data.id, relationship: "OWNER", status: "ACTIVE", createdAt: now, updatedAt: now },
+  { id: "a-arch", perspectiveId: "p-architecture", userId: personas.architect.id, relationship: "OWNER", status: "ACTIVE", createdAt: now, updatedAt: now },
+  { id: "a-security", perspectiveId: "p-security", userId: personas.security.id, relationship: "OWNER", status: "ACTIVE", createdAt: now, updatedAt: now },
+  { id: "a-ops", perspectiveId: "p-operations", userId: personas.operations.id, relationship: "OWNER", status: "ACTIVE", createdAt: now, updatedAt: now },
+  { id: "a-api", perspectiveId: "p-api", userId: personas.api.id, relationship: "OWNER", status: "ACTIVE", createdAt: now, updatedAt: now },
+  { id: "a-arch-data-contrib", perspectiveId: "p-data", userId: personas.architect.id, relationship: "CONTRIBUTOR", status: "ACTIVE", createdAt: now, updatedAt: now },
 ];
 
 export const requirements: Requirement[] = [
@@ -144,6 +210,8 @@ export const gaps: Gap[] = [
     requiredOwnerId: personas.operations.id,
     blocking: true,
     status: "OPEN",
+    createdAt: now,
+    updatedAt: now,
   },
 ];
 
@@ -153,15 +221,17 @@ export const conflicts: Conflict[] = [
     deliverySubjectId: deliverySubject.id,
     description: "Business expects immediate response while architecture prefers asynchronous propagation and operations notes slow-tail behavior.",
     positions: [
-      { id: "pos-business", actorId: personas.product.id, perspectiveId: "p-business", itemType: "REQUIREMENT", itemId: "r-api-exposure", summary: "The business expects immediate confirmation." },
-      { id: "pos-architecture", actorId: personas.architect.id, perspectiveId: "p-architecture", itemType: "KNOWLEDGE_REFERENCE", itemId: "k-integration-guideline", summary: "Cross-domain status propagation should normally be asynchronous." },
-      { id: "pos-operations", actorId: personas.operations.id, perspectiveId: "p-operations", itemType: "KNOWLEDGE_REFERENCE", itemId: "k-customer-mdm-slo", summary: "The source can have degraded tail latency up to three seconds." },
+      { id: "pos-business", actorId: personas.product.id, perspectiveId: "p-business", itemType: "REQUIREMENT", itemId: "r-api-exposure", summary: "The business expects immediate confirmation.", evidenceIds: [] },
+      { id: "pos-architecture", actorId: personas.architect.id, perspectiveId: "p-architecture", itemType: "KNOWLEDGE_REFERENCE", itemId: "k-integration-guideline", summary: "Cross-domain status propagation should normally be asynchronous.", evidenceIds: [] },
+      { id: "pos-operations", actorId: personas.operations.id, perspectiveId: "p-operations", itemType: "KNOWLEDGE_REFERENCE", itemId: "k-customer-mdm-slo", summary: "The source can have degraded tail latency up to three seconds.", evidenceIds: [] },
     ],
     severity: "HIGH",
     ownerIds: [personas.product.id, personas.architect.id, personas.operations.id],
     decisionOwnerId: personas.product.id,
     blocking: true,
     status: "OPEN",
+    createdAt: now,
+    updatedAt: now,
   },
 ];
 
@@ -177,6 +247,8 @@ export const assumptions: Assumption[] = [
     validationMethod: "Confirm target consumers and integration constraints during architecture/API drill.",
     impactIfWrong: "May require events or a separate service instead of API-only exposure.",
     status: "OPEN",
+    createdAt: now,
+    updatedAt: now,
   },
 ];
 
@@ -198,6 +270,8 @@ export const tasks: Task[] = [
     blocking: true,
     status: "OPEN",
     relatedObjectIds: ["r-verification-state", "k-customer-concept"],
+    createdAt: now,
+    updatedAt: now,
   },
   {
     id: "task-ops-failure",
@@ -212,6 +286,8 @@ export const tasks: Task[] = [
     blocking: true,
     status: "OPEN",
     relatedObjectIds: ["gap-failure-behavior", "r-api-exposure"],
+    createdAt: now,
+    updatedAt: now,
   },
 ];
 
