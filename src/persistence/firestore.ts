@@ -20,6 +20,22 @@ export const roleTemplatesCollection = (db: Firestore = firestore) => db.collect
 export const perspectiveTemplatesCollection = (db: Firestore = firestore) =>
   db.collection("perspectiveTemplates");
 
+// Shared reference/configuration data. Browser writes remain disabled by rules;
+// publishing/promoting versions must go through backend application services.
+export const requirementProfilesCollection = (db: Firestore = firestore) =>
+  db.collection("requirementProfiles");
+export const requirementProfileVersionsCollection = (
+  profileId: string,
+  db: Firestore = firestore,
+) => requirementProfilesCollection(db).doc(profileId).collection("versions");
+
+export const requirementCatalogCollection = (db: Firestore = firestore) =>
+  db.collection("requirementCatalog");
+export const requirementCatalogVersionsCollection = (
+  requirementId: string,
+  db: Firestore = firestore,
+) => requirementCatalogCollection(db).doc(requirementId).collection("versions");
+
 /**
  * Non-authoritative realtime projection used by My Work. The application
  * service must upsert/delete these items whenever task assignment/status or
@@ -120,6 +136,9 @@ export const subjectCollection = (
     | "proposedDiffs"
     | "requirements"
     | "requirementRevisions"
+    | "requirementChangeProposals"
+    | "requirementMatches"
+    | "requirementQualityFindings"
     | "requirementSources"
     | "gaps"
     | "conflicts"

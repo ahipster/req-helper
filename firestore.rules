@@ -29,6 +29,28 @@ service cloud.firestore {
       }
     }
 
+    // Shared reference/configuration data. Browser clients may read; all
+    // publishing/promotion writes remain backend-only.
+    match /requirementProfiles/{profileId} {
+      allow read: if signedIn();
+      allow write: if false;
+
+      match /versions/{versionId} {
+        allow read: if signedIn();
+        allow write: if false;
+      }
+    }
+
+    match /requirementCatalog/{requirementId} {
+      allow read: if signedIn();
+      allow write: if false;
+
+      match /versions/{versionId} {
+        allow read: if signedIn();
+        allow write: if false;
+      }
+    }
+
     // Profiles are readable to signed-in PoC users for names/expertise labels.
     // My Work uses a private per-user server-maintained projection rather than
     // a cross-subject task collection-group query, preserving subject isolation.

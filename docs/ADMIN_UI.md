@@ -2,18 +2,18 @@
 
 ## Purpose
 
-Req Helper needs a small configuration surface for PoC users, global application roles, perspective templates and Delivery Subject setup. This is not a full enterprise IAM product.
+Req Helper Admin configures PoC users, global roles, perspective templates and versioned Requirement Profiles. It is not a full IAM or enterprise requirement repository product.
 
-The model deliberately separates four concepts:
+The model separates:
 
 1. global application capability;
 2. Delivery Subject membership/access;
 3. expertise hints;
-4. per-perspective authority.
+4. per-perspective authority;
+5. Requirement Profile governance;
+6. current requirement catalogue reference/sync configuration.
 
-Do not infer authority from job title, system role, expertise hint or mere subject membership.
-
-## 1. Global application roles
+## 1. Global roles
 
 ```text
 ADMIN
@@ -22,16 +22,9 @@ DELIVERY_LEAD
 WAR_ROOM_OPERATOR
 ```
 
-- `ADMIN`: manage users/templates and administer PoC configuration.
-- `PARTICIPANT`: participate in assigned work.
-- `DELIVERY_LEAD`: capability to lead Delivery Subjects, but does not grant access to every Delivery Subject.
-- `WAR_ROOM_OPERATOR`: inspect/retry/diagnose agent runs, but does not grant assignment-management authority.
-
-Users may have multiple system roles.
+`ADMIN` may manage templates/profiles. Global role never implies perspective authority.
 
 ## 2. Delivery Subject membership
-
-Membership determines access to one Delivery Subject:
 
 ```text
 SPONSOR
@@ -40,22 +33,9 @@ PARTICIPANT
 OBSERVER
 ```
 
-Example:
-
-```text
-Alice
-  global roles: PARTICIPANT, DELIVERY_LEAD
-
-DS-123 membership: DELIVERY_LEAD
-DS-456 membership: OBSERVER
-DS-789: no membership -> no access
-```
-
-Global `DELIVERY_LEAD` means Alice is allowed to be configured as a subject lead; DS-123 membership establishes that she actually leads DS-123.
+Membership determines access to one subject.
 
 ## 3. Perspective authority
-
-Within a Delivery Subject:
 
 ```text
 OWNER
@@ -64,187 +44,240 @@ CONTRIBUTOR
 REVIEWER
 ```
 
-- OWNER/DELEGATE: authoritative verification rights for that perspective.
-- CONTRIBUTOR: knowledge contribution only.
-- REVIEWER: advisory challenge/comment/recommendation only.
-
-Reviewer is never treated as authoritative merely because of a global role.
+OWNER/DELEGATE may satisfy authoritative verification. REVIEWER remains advisory.
 
 ## 4. Expertise hints
 
-`expertisePerspectiveTypes` is suggestion metadata only. It helps find likely participants and may influence AI routing suggestions. It never creates membership or assignment.
+`expertisePerspectiveTypes` helps routing/suggestions only.
 
-## 5. Firestore root collections
+## 5. Admin root data
 
 ```text
 users/{userId}
 roleTemplates/{roleTemplateId}
 perspectiveTemplates/{perspectiveTemplateId}
+requirementProfiles/{profileId}
+  /versions/{version}
+requirementCatalog/{requirementId}
+  /versions/{version}
 ```
 
-Membership and assignments live under each Delivery Subject:
-
-```text
-deliverySubjects/{subjectId}/members/{userId}
-deliverySubjects/{subjectId}/assignments/{assignmentId}
-```
+Subject membership/assignments/proposals live under Delivery Subjects.
 
 ## 6. Admin Overview
 
 ```text
-┌───────────────────────────────────────────────────────────────┐
-│ Req Helper / Admin                                           │
-├───────────────────────────────────────────────────────────────┤
-│ Users                 14 active                              │
-│ Role templates         6                                     │
-│ Perspective templates 11                                     │
-│ Subjects missing owner 2                                     │
-│                                                               │
-│ [Users] [Roles] [Perspectives] [Ownership gaps]              │
-└───────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│ Req Helper / Admin                                            │
+├────────────────────────────────────────────────────────────────┤
+│ Users                    14 active                             │
+│ Perspective templates    11                                    │
+│ Requirement Profiles      7 published · 2 drafts              │
+│ Catalogue requirements  842 current                            │
+│ Subjects missing owner    2                                    │
+│                                                                │
+│ [Users] [Roles] [Perspectives] [Requirement Profiles]          │
+│ [Catalogue] [Ownership gaps]                                   │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-## 7. Users
+## 7. Users / role templates
+
+Same semantics as before: users can be activated/deactivated, assigned global roles and expertise hints. Deactivation preserves historical references.
+
+## 8. Perspective Catalogue
+
+Admin configures active perspective templates, descriptions, default criticality and prompt skill. Template changes do not silently mutate historical Delivery Subject perspectives.
+
+## 9. Requirement Profiles
+
+Requirement Profile is the editable **requirements-for-requirements** contract.
 
 ```text
-User       Global capabilities               Expertise       Status
-Alice      PARTICIPANT, DELIVERY_LEAD         Arch, API       Active
-Bob        PARTICIPANT                        Business        Active
-Dana       WAR_ROOM_OPERATOR, PARTICIPANT     Security        Active
+Profile            Published     Draft       Status
+API Change         v8            v9          active
+Data Model Change  v4            —           active
+Regulatory Change  v3            —           active
+Migration          v2            v3          active
 ```
 
-## 8. User Detail
+Actions:
 
 ```text
-Name       Alice Example
-Email      alice@example.bank
-Title      Solution Architect
-Team       Customer Platform
-
-Global roles
-[x] PARTICIPANT
-[x] DELIVERY_LEAD
-[ ] WAR_ROOM_OPERATOR
-[ ] ADMIN
-
-Expertise hints
-[x] ARCHITECTURE [x] API [x] INTEGRATION [ ] DATA
-
-[Save] [Deactivate]
+[Create profile]
+[New version]
+[Edit draft]
+[Compare versions]
+[Publish]
+[Retire profile]
 ```
 
-Deactivation preserves historical references. It prevents new work/assignments until reactivated.
+Published versions are immutable. Editing a published profile always creates a new DRAFT version.
 
-## 9. Role Templates
-
-Role templates are convenience bundles for system roles + expertise suggestions. They are never subject membership or authority.
+## 10. Requirement Profile editor
 
 ```text
-Architect
-  global: PARTICIPANT
-  suggested expertise: ARCHITECTURE, API, INTEGRATION
+API Change · DRAFT v9
 
-Product Owner
-  global: PARTICIPANT
-  suggested expertise: BUSINESS, PROCESS
+Applicable subject kinds
+[x] API_CHANGE [x] NEW_SERVICE [ ] MIGRATION
 
-War-room Operator
-  global: WAR_ROOM_OPERATOR, PARTICIPANT
-  authority implied: none
+Required perspectives
+[x] API [x] ARCHITECTURE [x] SECURITY [x] OPERATIONS
+
+Requirement types
+INTEGRATION [enabled]
+SECURITY    [enabled]
+RESILIENCE  [enabled]
+OBSERVABILITY [enabled]
+
+INTEGRATION policy
+[x] rationale
+[x] owner
+[x] capability link
+[x] authoritative provenance
+minimum acceptance              [2]
+automatable acceptance          [required]
+required evals                  [SECURITY_CHECK]
+
+Typed details
+Producer          REFERENCE       required
+Consumers         REFERENCE_LIST  required
+Contract          REFERENCE       required
+FailureBehaviour  TEXT            required
+Compatibility     ENUM            required
+
+Existing requirement matching
+Search before CREATE            [required]
+Duplicate threshold             [0.85]
+Contradiction review            [required]
+
+[Ask AI to modify draft] [Preview findings] [Publish v9]
 ```
 
-## 10. Perspective Catalogue
+The form may use assistant-ui form-filling copilot. AI updates draft fields only; human explicitly publishes.
 
-Admins can configure active perspective templates, descriptions, default criticality and default prompt skill.
+## 11. Publishing a profile version
 
-Template changes do not silently alter historical Delivery Subject perspectives; subjects keep the snapshot/config actually used unless explicitly updated.
+Publish validates:
 
-## 11. Delivery Subject Members
+- unique rule/field keys;
+- supported types/value types;
+- required enum options where relevant;
+- thresholds in valid range;
+- no contradictory policy definition;
+- profile version > current published version.
 
-Subject Delivery Lead/Admin manages access:
+On publish:
 
 ```text
-Customer onboarding / Members
+DRAFT v9 -> PUBLISHED v9
+profile.currentPublishedVersion = 9
+```
 
+Existing Delivery Subjects pinned to v8 stay on v8.
+
+## 12. Profile impact / upgrade preview
+
+Admin/Delivery Lead can preview the effect of a newer profile on a subject:
+
+```text
+DS-123: API Change v8 -> v9
+
+New blocking findings
++ R-17 missing rollbackBehaviour
++ R-18 requires PERFORMANCE_TEST
+
+Removed
+- API-COMPAT-OLD
+
+[Do not upgrade] [Upgrade subject]
+```
+
+Upgrade is an explicit subject mutation + audit event.
+
+## 13. Requirement Catalogue admin/reference view
+
+P0 catalogue is primarily read/reference oriented for Delivery Subject workflows.
+
+```text
+REQ-248 · INTEGRATION · ACTIVE · current v6
+Capabilities: Customer Verification
+Source: Enterprise Requirements Repository / EXT-1942
+
+Versions: v1 ... v6
+Active proposals: DS-119, DS-123
+```
+
+Admin may configure/import/sync catalogue data through backend utilities, but subject UI has no direct `Make Current` action.
+
+A Delivery Subject proposal can never directly overwrite catalogue records.
+
+## 14. Delivery Subject Members
+
+Subject Delivery Lead/Admin manages access and assignments as previously specified.
+
+```text
 Bob      SPONSOR, PARTICIPANT
 Alice    DELIVERY_LEAD, PARTICIPANT
 Cara     PARTICIPANT
-Erik     PARTICIPANT
 Mia      OBSERVER
-
-[Add member] [Change role] [Remove access]
 ```
 
-Removing access does not delete historical contributions/events.
-
-## 12. Perspective Assignments
-
-```text
-Perspective    Person     Relation       Effect
-Business       Bob        OWNER          authoritative
-Architecture   Alice      OWNER          authoritative
-Data           Cara       DELEGATE       authoritative
-Security       Dana       REVIEWER       advisory only
-Security       —          —              NEEDS OWNER/DELEGATE
-```
-
-Suggested experts may be shown, but the subject Delivery Lead confirms the assignment.
-
-## 13. Permission matrix for P0
+## 15. Permissions
 
 ### ADMIN
 
-- manage users/templates;
-- view/administer all PoC subjects where policy permits;
-- manage membership/assignments;
-- use War Room diagnostics if also authorized by deployment policy.
+- manage users/global templates;
+- create/edit/publish Requirement Profile versions;
+- configure catalogue import/sync where enabled;
+- administer subject membership/assignments under PoC policy.
 
 ### Subject DELIVERY_LEAD
 
-- manage that subject's membership;
+- manage that subject membership/assignments;
 - confirm perspectives;
-- manage assignments;
-- reassign tasks;
-- record/route decisions;
-- reopen discovery/resolution.
+- choose/pin a published Requirement Profile;
+- compare/upgrade to a newer published profile;
+- classify/review requirement changes/matches;
+- route decisions.
 
 ### WAR_ROOM_OPERATOR
 
-- inspect/rerun/classify harness activity for subjects they may access;
-- **cannot** alter membership/assignments unless they also hold ADMIN or subject DELIVERY_LEAD.
+- diagnose/rerun harness activity for accessible subjects;
+- no implicit assignment/profile-publishing authority.
 
 ### OWNER/DELEGATE
 
 - authoritative verification for assigned perspective;
-- no automatic admin/membership-management permission.
+- no profile administration permission.
 
 ### REVIEWER
 
-- comment/challenge/recommend;
-- cannot satisfy authoritative verification solely as Reviewer.
+- advisory comment/challenge/recommendation only.
 
-## 14. User stories
+## 16. User stories
 
-### Admin
+### Admin / Requirement Steward
 
-- Add/activate/deactivate users.
-- Assign global application roles.
-- Record expertise hints.
-- Maintain role/perspective templates.
-- See Delivery Subjects missing required authority.
+- Create Requirement Profile.
+- Fork current published version into draft.
+- Add/remove required perspectives.
+- Configure enabled requirement types.
+- Add typed profile detail fields.
+- Change acceptance/evaluation expectations.
+- Change existing-requirement search/duplicate policies.
+- Use form copilot to edit the draft quickly.
+- Publish immutable version.
+- Inspect which subjects use each profile version.
 
 ### Delivery Lead
 
-- Add/remove subject members.
-- Assign subject roles.
-- Assign OWNER/DELEGATE/CONTRIBUTOR/REVIEWER per perspective.
-- Find candidate experts using hints.
-- See required perspectives lacking OWNER/DELEGATE.
+- Select/pin profile for subject.
+- See available newer version.
+- Preview new gaps before upgrade.
+- Explicitly upgrade or remain on current version.
 
-### War-room Operator
+## 17. P0 boundary
 
-- Diagnose/rerun agent activity without accidentally obtaining governance authority.
-
-## 15. P0 boundary
-
-Do not implement HR directory sync, SCIM, nested groups, delegated-admin hierarchies, ABAC policy language or automatic job-title authority inference. Those are future identity integrations.
+Do not implement HR directory sync, SCIM, nested groups, generic policy language, automatic catalogue promotion after deployment or arbitrary user-defined JavaScript validation. Requirement Profile rules use the typed schema defined in `src/domain/schemas.ts`.

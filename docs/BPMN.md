@@ -9,13 +9,23 @@ Req Helper uses persisted Firestore state/tasks plus deterministic application s
    |
 [Create Delivery Subject + SourceArtifacts]
    |
+[Classify subject kind]
+   |
+[Suggest/select PUBLISHED Requirement Profile]
+   |
+[Pin exact profile version]
+   |
 [Clarify problem / outcome / scope / constraints / success]
    |
-[Resolve subject membership/access]
+[Resolve membership/access]
    |
-[Retrieve enterprise knowledge]
+[Discover CURRENT enterprise requirements + knowledge]
    |
-[OpenCode proposes impacts + perspectives]
+[Discover ACTIVE proposals from other Delivery Subjects]
+   |
+[Create RequirementMatch candidates]
+   |
+[OpenCode proposes impacts + perspectives + initial change operations]
    |
 [Delivery Lead confirms required perspectives]
    |
@@ -33,41 +43,51 @@ Req Helper uses persisted Firestore state/tasks plus deterministic application s
    |       |
    |     [Extract Contribution/Evidence]
    |       |
-   |     [Propose Requirement/Gap/Assumption/Conflict commands]
+   |     [Propose/update subject Requirement]
    |       |
-   |     [Validate authz + schema + revision + idempotency]
+   |     [Find CURRENT + ACTIVE matches if semantics changed]
    |       |
-   |     [Firestore transaction + RequirementRevision/Source/Event]
+   |     [Classify CREATE/MODIFY/SUPERSEDE/RETIRE/NO_CHANGE]
+   |       |
+   |     [Evaluate pinned Requirement Profile]
+   |       |
+   |     [Propose Gap/Assumption/Conflict/Decision tasks]
+   |       |
+   |     [Validate authz/schema/subject revision/baseline version/idempotency]
+   |       |
+   |     [Firestore transaction + Revision/Source/Proposal/Match/Finding/Event]
    |       |
    |     <Needs another human?>
    |        | YES -> [WAITING_ON_OTHER + related task]
    |        | NO  -> [COMPLETED]
-   |       |
-   |     <Enough perspective coverage?> -- NO --> next Task
    |
 <Join when required perspectives converge enough>
    |
-[Cross-perspective synthesis]
+[Cross-perspective + cross-subject synthesis]
    |
-[Detect gaps / assumptions / N-party conflicts]
+[Detect gaps / assumptions / N-party conflicts / proposal collisions]
    |
-<Blocking issues?>
+<Baseline/source stale?> -- YES --> [Compare/rebase/reassess] --> relevant stage
+   |
+  NO
+   v
+<Blocking issues/profile findings/matches?>
    | YES
    v
-[Create VERIFY / FILL_GAP / RESOLVE_CONFLICT / DECIDE tasks]
+[Create VERIFY / FILL_GAP / REVIEW_MATCH / RESOLVE_CONFLICT / DECIDE tasks]
    |
-[Human verification / positions / decision]
+[Human verification / match review / positions / decisions]
    |
-[Reassess affected requirements]
-   +---------------------------> [Cross-perspective synthesis]
+[Reassess proposed requirements/change operations]
+   +-----------------------------> [Cross-perspective synthesis]
    |
    NO / resolved
    v
 [Identify implementation areas]
    |
-[Create targeted WorkPackages + Dependencies]
+[Create WorkPackages + Dependencies from proposed change set]
    |
-[Generate Requirement/WorkPackage/DeliverySubject acceptance + evals]
+[Generate requirement/package/subject acceptance + evals]
    |
 [Run deterministic readiness]
    |
@@ -77,14 +97,100 @@ Req Helper uses persisted Firestore state/tasks plus deterministic application s
    v
 [FINAL_REVIEW task]
    |
-[Publish JSON + Markdown + read-only package API]
+[Publish JSON + Markdown + read-only CHANGE-SET API]
    |
-(Ready for downstream SDLC)
+[HANDED_OFF — current catalogue/source remains unchanged]
+   |
+(Downstream SDLC implements/deploys; later reconciliation is outside P0)
 ```
 
-## Human task subprocess
+## Existing-requirement matching subprocess
 
-Canonical Task lifecycle:
+```text
+[Potential requirement/change]
+   |
+[derive type + capability/context refs]
+   |
++----------------------+----------------------+
+| search CURRENT       | search ACTIVE        |
+| requirement catalogue| subject proposals    |
++----------------------+----------------------+
+            |
+[rank candidates]
+            |
+[DUPLICATE / OVERLAPS / CONTRADICTS / RELATED]
+            |
+[persist RequirementMatch]
+            |
+<blocking ambiguity?> -- YES --> [human review task]
+            |
+           NO / resolved
+            v
+[classify CREATE/MODIFY/SUPERSEDE/RETIRE/NO_CHANGE]
+```
+
+The model's similarity score is not authority. A profile may require this subprocess before CREATE.
+
+## Baseline staleness subprocess
+
+```text
+[Proposal pins REQ-248 v6]
+        |
+[read current catalogue]
+        |
+<current still v6?> -- YES --> continue
+        |
+       NO
+        v
+[mark STALE_BASELINE]
+        |
+[compare old baseline -> new baseline]
+        |
+[rebase proposal / reassess matches + conflicts + profile findings]
+        |
+[human confirms updated proposal where needed]
+```
+
+Knowledge ProposedDiff follows the same flow using source version/fingerprint.
+
+## Requirement Profile subprocess
+
+### Initial pin
+
+```text
+[subject kind/context]
+ -> suggest PUBLISHED profile
+ -> Delivery Lead confirms
+ -> pin profileId/version
+ -> create required perspectives
+ -> evaluate initial profile findings
+```
+
+### Requirement evaluation
+
+```text
+[proposed Requirement revision changes]
+ -> load pinned profile version
+ -> validate enabled type + required fields/details
+ -> validate capability/provenance requirements
+ -> validate acceptance/eval rules
+ -> persist/update RequirementQualityFinding records
+```
+
+### Upgrade
+
+```text
+[new profile version published]
+ -> subject remains on old version
+ -> [Compare versions]
+ -> preview added/removed findings
+ -> Delivery Lead chooses keep or explicit upgrade
+ -> upgrade audit event + re-evaluation
+```
+
+No silent readiness-rule change.
+
+## Human task subprocess
 
 ```text
 OPEN -> IN_PROGRESS -> ANSWERED -> PROCESSING -> COMPLETED
@@ -92,155 +198,126 @@ OPEN -> IN_PROGRESS -> ANSWERED -> PROCESSING -> COMPLETED
 Any nonterminal -> CANCELLED
 ```
 
-Important ordering:
-
-```text
-Human submits answer
- -> persist message/answer
- -> task ANSWERED
- -> only then invoke OpenCode
-```
-
-If OpenCode/model fails, the human answer remains durable and the task is retriable.
+Human answer is persisted before OpenCode invocation. Provider failure leaves retriable durable input.
 
 Special responses:
 
 ```text
 I don't know
- -> persist Contribution(epistemicMode=UNKNOWN)
- -> identify likely owner/expert
- -> create/reroute follow-up
+ -> Contribution(UNKNOWN)
+ -> route to likely owner/expert
 
 Ask someone
- -> persist suggested participant
- -> Delivery Lead/authorized flow confirms access/assignment if needed
+ -> suggest participant
+ -> authorized membership/assignment step if needed
  -> create related task
 ```
 
 ## Verification subprocess
 
 ```text
-[Requirement/Contribution/ProposedDiff needs authority]
-   |
-[Identify active OWNER/DELEGATE for relevant perspective]
-   |
-[VERIFY task]
-   |
-[Render exact target revision + provenance/evidence]
-   |
-<Human verdict>
-   +-- VERIFIED -> append active Verification
-   +-- REJECTED -> append Verification + reopen synthesis/gap
-   +-- AMENDED  -> append Verification + normal revision/edit service
+[proposed Requirement/Contribution/ProposedDiff needs authority]
+ -> identify OWNER/DELEGATE
+ -> VERIFY task
+ -> render CURRENT baseline + exact PROPOSED target revision + evidence
+ -> human VERIFIED / REJECTED / AMENDED
 ```
 
-A Requirement revision change never inherits old-revision readiness verification automatically.
-
-Reviewer comments/challenges are advisory and follow a REVIEW task, not authoritative verification.
+Verification means the proposal revision is verified; it does not promote it into CURRENT baseline.
 
 ## Requirement edit subprocess
 
-Human Edit and AI proposal use the same path:
+Human Edit and AI proposal use one path:
 
 ```text
-[Edit proposed]
+[edit proposed Requirement]
  -> authorize
- -> compare expected/current requirement revision
+ -> compare expected/current subject Requirement revision
  -> append RequirementRevision
- -> update current Requirement revision
- -> persist RequirementSource links
- -> old revision Verification remains audit-only
- -> reassess revision-bound acceptance/evals
- -> reassess dependent conflicts/gaps
+ -> update proposed Requirement
+ -> persist RequirementSource
+ -> invalidate old revision verification/acceptance/evals for readiness
+ -> re-run relevant baseline/active-proposal matching
+ -> evaluate pinned profile
+ -> reassess conflicts/gaps
  -> append DomainEvent
 ```
 
-## N-party conflict-resolution subprocess
+No catalogue mutation occurs.
+
+## N-party conflict subprocess
 
 ```text
 [Conflict detected]
-   |
-[Persist Conflict with 2+ initial positions]
-   |
-[Identify affected participants + named decision owner]
-   |
-[Create participant-specific RESOLVE_CONFLICT/REVIEW tasks]
-   |
-+---------- independent threads in parallel ----------+
-| participant records position/evidence               |
-+------------------------------------------------------+
-   |
-[Shared Conflict Workspace aggregates structured positions]
-   |
-[OpenCode produces neutral summary/options]
-   |
-<Decision/source correction needed?>
-   +-- Decision -> [Named human owner records Decision]
-   +-- Correction -> [Normal requirement/source correction path]
-   |
-[Mark conflict resolved]
-   |
-[Re-evaluate affected requirements / tasks / readiness]
+ -> persist 2+ positions
+ -> positions may reference CURRENT baseline, subject proposal,
+    another active subject proposal or knowledge source
+ -> participant-specific tasks
+ -> independent AgentThreads capture evidence/position
+ -> shared Conflict Workspace aggregates
+ -> AI neutral summary/options
+ -> named human Decision/source correction
+ -> resolve + reassess changes/readiness
 ```
 
-The shared Conflict Workspace is a shared **view**, not a shared OpenCode conversation/session.
-
-## Knowledge-impact subprocess
+## Knowledge impact subprocess
 
 ```text
-[KnowledgeReference linked]
- -> compare current source understanding vs proposed change
+[CURRENT KnowledgeReference version/fingerprint]
  -> ProposedDiff ADD/MODIFY/REMOVE/DEPRECATE/UNKNOWN_CHANGE
- -> human confirm/reject/correct where needed
- -> persist Verification/updated ProposedDiff
+ -> human confirm/reject/correct
+ -> if source changes: STALE_BASELINE -> reassess
 ```
 
-No authoritative source-system write-back occurs in the PoC.
+No external write-back in P0.
 
 ## Work-package subprocess
 
 ```text
-[Converged requirements]
- -> identify target implementation areas
- -> create WorkPackage(targetAreaRef, targetTeamId?, coordinatorId?)
- -> attach requirements
- -> detect cross-package dependencies
- -> package-level acceptance/evals where needed
+[converged change proposals]
+ -> identify implementation areas
+ -> create targeted WorkPackages
+ -> attach proposed Requirement IDs/change refs
+ -> dependencies
+ -> package-level acceptance/evals
 ```
-
-A human coordinator is never substituted for target implementation-area identity.
 
 ## Readiness subprocess
 
-```text
-[Load canonical persisted snapshot]
- -> deterministic checks
- -> append ReadinessEvaluated event
- -> any blocking failure: NOT_READY + exact object IDs/actions
- -> all blocking pass: READY
-```
+Blocking checks include:
 
-Notable blockers include required-but-PROPOSED perspectives, missing OWNER/DELEGATE, stale requirement verification, open blocking assumptions/dependencies/tasks and missing current acceptance/evals.
+- problem/outcome;
+- published Requirement Profile pinned;
+- no blocking OPEN profile finding;
+- all active proposed Requirements have change proposals;
+- no stale requirement baseline;
+- no blocking UNREVIEWED RequirementMatch;
+- required perspectives confirmed/owned;
+- current proposal revision verified/provenanced;
+- no blocking gap/conflict/assumption/dependency/task;
+- required impacts/work-package targets/acceptance/evals.
+
+Any failed blocker -> NOT_READY. Score is informational.
 
 ## OpenCode recovery/context subprocess
 
 ```text
-[Task processing begins]
- -> acquire AgentThread lease
- -> resolve stored OpenCode session
- -> missing? create session + increment generation + FULL hydration
- -> compare DeliverySubject.revision vs contextRevisionPresented
- -> changed? FULL bounded authoritative hydration in P0
+[Task processing]
+ -> acquire thread lease
+ -> resolve/recreate OpenCode session
+ -> FULL hydrate when new/stale subject context
+ -> include pinned profile
+ -> include CURRENT baseline exact versions
+ -> include PROPOSED changes/matches/findings
  -> run OpenCode
- -> record revision actually presented
+ -> record subject revision actually presented
+ -> before mutation re-read target + baseline/source versions
  -> validate/apply commands
  -> persist domainRevisionAtEnd separately
  -> release lease
 ```
 
-Never write same-run `domainRevisionAtEnd` as `contextRevisionPresented` unless that state was actually presented back to OpenCode.
-
-## Delivery Subject state transitions
+## Delivery Subject states
 
 ```text
 DRAFT -> DISCOVERING -> DRILLING -> RESOLVING -> SPLITTING -> READY -> HANDED_OFF
@@ -248,4 +325,4 @@ DRAFT -> DISCOVERING -> DRILLING -> RESOLVING -> SPLITTING -> READY -> HANDED_OF
                          +-------------+
 ```
 
-New evidence may return an active subject to DRILLING/RESOLVING. `CANCELLED` is terminal.
+`HANDED_OFF` means change set delivered downstream. Current Requirement Catalogue / external knowledge remain unchanged until an explicit future reconciliation process after delivery.

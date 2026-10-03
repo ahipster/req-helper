@@ -14,6 +14,17 @@ export const DeliverySubjectStatus = z.enum([
   "CANCELLED",
 ]);
 
+export const DeliverySubjectKind = z.enum([
+  "GENERAL",
+  "API_CHANGE",
+  "DATA_MODEL_CHANGE",
+  "REGULATORY_CHANGE",
+  "CUSTOMER_JOURNEY_CHANGE",
+  "OPERATIONAL_CHANGE",
+  "MIGRATION",
+  "NEW_SERVICE",
+]);
+
 export const PerspectiveType = z.enum([
   "BUSINESS",
   "PROCESS",
@@ -97,6 +108,9 @@ export const DeliverySubjectSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   initialSignal: z.string().min(1),
+  subjectKind: DeliverySubjectKind.optional(),
+  requirementProfileId: z.string().optional(),
+  requirementProfileVersion: z.number().int().positive().optional(),
   problemStatement: z.string().min(1).optional(),
   desiredOutcome: z.string().min(1).optional(),
   scopeIn: z.array(z.string()).default([]),
@@ -247,9 +261,11 @@ export const KnowledgeReferenceSchema = z.object({
   ]),
   externalSystem: z.string(),
   externalId: z.string().optional(),
+  stableKey: z.string().optional(),
   title: z.string(),
   uri: z.string().optional(),
   version: z.string().optional(),
+  fingerprint: z.string().optional(),
   retrievedAt: z.string(),
   summary: z.string().optional(),
   relevance: z.number().min(0).max(1).optional(),
@@ -260,11 +276,13 @@ export const ProposedDiffSchema = z.object({
   id: z.string(),
   deliverySubjectId: z.string(),
   knowledgeReferenceId: z.string(),
+  baselineVersion: z.string().optional(),
+  baselineFingerprint: z.string().optional(),
   diffType: z.enum(["ADD", "MODIFY", "REMOVE", "DEPRECATE", "UNKNOWN_CHANGE"]),
   before: z.unknown().optional(),
   after: z.unknown().optional(),
   reason: z.string(),
-  status: z.enum(["PROPOSED", "CONFIRMED", "REJECTED", "SUPERSEDED"]),
+  status: z.enum(["PROPOSED", "CONFIRMED", "REJECTED", "SUPERSEDED", "STALE_BASELINE"]),
   revision: z.number().int().positive().default(1),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -289,8 +307,134 @@ export const RequirementType = z.enum([
   "TRANSITION",
 ]);
 
-// Verification is a separate first-class record. Requirement status tracks
-// synthesis/conflict lifecycle, not whether a human has verified the current revision.
+export const RequirementDetailValueType = z.enum([
+  "TEXT",
+  "BOOLEAN",
+  "NUMBER",
+  "ENUM",
+  "REFERENCE",
+  "TEXT_LIST",
+  "REFERENCE_LIST",
+]);
+
+export const RequirementDetailValueSchema = z.object({
+  fieldKey: z.string().min(1),
+  valueType: RequirementDetailValueType,
+  textValue: z.string().optional(),
+  booleanValue: z.boolean().optional(),
+  numberValue: z.number().optional(),
+  listValue: z.array(z.string()).optional(),
+});
+
+export const RequirementProfileFieldSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().optional(),
+  valueType: RequirementDetailValueType,
+  required: z.boolean().default(false),
+  options: z.array(z.string()).optional(),
+  prompt: z.string().optional(),
+});
+
+export const RequirementProfileTypePolicySchema = z.object({
+  requirementType: RequirementType,
+  enabled: z.boolean().default(true),
+  requiredByDefault: z.boolean().default(false),
+  requireRationale: z.boolean().default(false),
+  requireOwner: z.boolean().default(false),
+  requireCapabilityLink: z.boolean().default(false),
+  requireAuthoritativeProvenance: z.boolean().default(false),
+  minimumAcceptanceCriteria: z.number().int().nonnegative().default(0),
+  requireAutomatableAcceptance: z.boolean().default(false),
+  requiredEvaluationTypes: z.array(z.enum([
+    "DETERMINISTIC_TEST",
+    "SEMANTIC_LLM_EVAL",
+    "PERFORMANCE_TEST",
+    "SECURITY_CHECK",
+    "POLICY_CHECK",
+    "HUMAN_EVAL",
+  ])).default([]),
+  detailFields: z.array(RequirementProfileFieldSchema).default([]),
+});
+
+export const RequirementProfileSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  currentPublishedVersion: z.number().int().positive().optional(),
+  active: z.boolean().default(true),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const RequirementProfileVersionSchema = z.object({
+  id: z.string().min(1),
+  profileId: z.string().min(1),
+  version: z.number().int().positive(),
+  status: z.enum(["DRAFT", "PUBLISHED", "RETIRED"]),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  applicableSubjectKinds: z.array(DeliverySubjectKind).default([]),
+  requiredPerspectiveTypes: z.array(PerspectiveType).default([]),
+  typePolicies: z.array(RequirementProfileTypePolicySchema).default([]),
+  requireExistingRequirementSearchBeforeCreate: z.boolean().default(true),
+  duplicateMatchThreshold: z.number().min(0).max(1).default(0.85),
+  contradictionReviewRequired: z.boolean().default(true),
+  createdBy: z.string(),
+  createdAt: z.string(),
+  publishedAt: z.string().optional(),
+});
+
+export const RequirementQualityFindingSchema = z.object({
+  id: z.string(),
+  deliverySubjectId: z.string(),
+  profileId: z.string(),
+  profileVersion: z.number().int().positive(),
+  requirementId: z.string().optional(),
+  ruleId: z.string(),
+  severity: Criticality,
+  blocking: z.boolean(),
+  message: z.string(),
+  status: z.enum(["OPEN", "RESOLVED", "WAIVED"]),
+  waiverDecisionId: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const RequirementCatalogLifecycle = z.enum(["ACTIVE", "DEPRECATED", "RETIRED"]);
+
+export const RequirementCatalogItemSchema = z.object({
+  id: z.string(),
+  stableKey: z.string().min(1),
+  type: RequirementType,
+  title: z.string().min(1),
+  lifecycle: RequirementCatalogLifecycle,
+  currentVersion: z.number().int().positive(),
+  capabilityRefs: z.array(z.string()).default([]),
+  authoritativeSourceSystem: z.string().optional(),
+  authoritativeExternalId: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const RequirementCatalogVersionSchema = z.object({
+  id: z.string(),
+  requirementId: z.string(),
+  version: z.number().int().positive(),
+  type: RequirementType,
+  title: z.string().min(1),
+  statement: z.string().min(1),
+  rationale: z.string().optional(),
+  criticality: Criticality,
+  capabilityRefs: z.array(z.string()).default([]),
+  details: z.array(RequirementDetailValueSchema).default([]),
+  sourceVersion: z.string().optional(),
+  sourceFingerprint: z.string().optional(),
+  effectiveFrom: z.string().optional(),
+  publishedAt: z.string(),
+  publishedBy: z.string().optional(),
+});
+
 export const RequirementStatus = z.enum([
   "DRAFT",
   "NEEDS_INPUT",
@@ -310,6 +454,8 @@ export const RequirementSchema = z.object({
   criticality: Criticality,
   status: RequirementStatus,
   ownerId: z.string().optional(),
+  capabilityRefs: z.array(z.string()).optional(),
+  details: z.array(RequirementDetailValueSchema).optional(),
   extractionConfidence: z.number().min(0).max(1).optional(),
   requiresEvaluation: z.boolean().default(false),
   revision: z.number().int().positive(),
@@ -330,11 +476,63 @@ export const RequirementRevisionSchema = z.object({
   priority: Priority,
   criticality: Criticality,
   ownerId: z.string().optional(),
+  capabilityRefs: z.array(z.string()).optional(),
+  details: z.array(RequirementDetailValueSchema).optional(),
   requiresEvaluation: z.boolean(),
   changedByActorType: z.enum(["HUMAN", "AI", "SYSTEM"]),
   changedByActorId: z.string().optional(),
   reason: z.string().optional(),
   createdAt: z.string(),
+});
+
+export const RequirementChangeType = z.enum([
+  "CREATE",
+  "MODIFY",
+  "SUPERSEDE",
+  "RETIRE",
+  "NO_CHANGE",
+]);
+
+export const RequirementChangeProposalStatus = z.enum([
+  "DRAFT",
+  "PROPOSED",
+  "VERIFIED",
+  "APPROVED_FOR_HANDOFF",
+  "HANDED_OFF",
+  "REJECTED",
+  "WITHDRAWN",
+  "STALE_BASELINE",
+]);
+
+export const RequirementChangeProposalSchema = z.object({
+  id: z.string(),
+  deliverySubjectId: z.string(),
+  changeType: RequirementChangeType,
+  baselineRequirementId: z.string().optional(),
+  baselineVersion: z.number().int().positive().optional(),
+  proposedRequirementId: z.string().optional(),
+  rationale: z.string().min(1),
+  status: RequirementChangeProposalStatus,
+  relatedConflictIds: z.array(z.string()).default([]),
+  supersedesProposalIds: z.array(z.string()).default([]),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const RequirementMatchSchema = z.object({
+  id: z.string(),
+  deliverySubjectId: z.string(),
+  subjectRequirementId: z.string(),
+  candidateKind: z.enum(["BASELINE_REQUIREMENT", "ACTIVE_PROPOSAL"]),
+  candidateId: z.string(),
+  candidateVersion: z.number().int().positive().optional(),
+  relationship: z.enum(["DUPLICATE", "OVERLAPS", "CONTRADICTS", "RELATED"]),
+  score: z.number().min(0).max(1).optional(),
+  rationale: z.string(),
+  blocking: z.boolean().default(false),
+  status: z.enum(["UNREVIEWED", "CONFIRMED", "DISMISSED"]),
+  createdAt: z.string(),
+  updatedAt: z.string(),
 });
 
 export const RequirementSourceSchema = z.object({
@@ -349,9 +547,11 @@ export const RequirementSourceSchema = z.object({
     "DECISION",
     "ASSUMPTION",
     "SOURCE_ARTIFACT",
+    "BASELINE_REQUIREMENT",
     "AI_INFERENCE",
   ]),
   sourceId: z.string(),
+  sourceVersion: z.string().optional(),
   authoritative: z.boolean(),
   createdAt: z.string(),
 });
@@ -372,6 +572,8 @@ export const GapSchema = z.object({
 export const ConflictItemType = z.enum([
   "CONTRIBUTION",
   "REQUIREMENT",
+  "BASELINE_REQUIREMENT",
+  "REQUIREMENT_CHANGE_PROPOSAL",
   "KNOWLEDGE_REFERENCE",
   "DECISION",
   "ASSUMPTION",
@@ -580,9 +782,6 @@ export const TaskSchema = z.object({
   updatedAt: z.string(),
 });
 
-// Realtime My Work reads a server-maintained projection under the current
-// user's profile. It is deliberately non-authoritative and must be deleted or
-// updated transactionally when task assignment/access changes.
 export const TaskInboxItemSchema = z.object({
   id: z.string(),
   userId: z.string(),
@@ -610,8 +809,15 @@ export type Contribution = z.infer<typeof ContributionSchema>;
 export type Verification = z.infer<typeof VerificationSchema>;
 export type KnowledgeReference = z.infer<typeof KnowledgeReferenceSchema>;
 export type ProposedDiff = z.infer<typeof ProposedDiffSchema>;
+export type RequirementProfile = z.infer<typeof RequirementProfileSchema>;
+export type RequirementProfileVersion = z.infer<typeof RequirementProfileVersionSchema>;
+export type RequirementQualityFinding = z.infer<typeof RequirementQualityFindingSchema>;
+export type RequirementCatalogItem = z.infer<typeof RequirementCatalogItemSchema>;
+export type RequirementCatalogVersion = z.infer<typeof RequirementCatalogVersionSchema>;
 export type Requirement = z.infer<typeof RequirementSchema>;
 export type RequirementRevision = z.infer<typeof RequirementRevisionSchema>;
+export type RequirementChangeProposal = z.infer<typeof RequirementChangeProposalSchema>;
+export type RequirementMatch = z.infer<typeof RequirementMatchSchema>;
 export type RequirementSource = z.infer<typeof RequirementSourceSchema>;
 export type Gap = z.infer<typeof GapSchema>;
 export type Conflict = z.infer<typeof ConflictSchema>;

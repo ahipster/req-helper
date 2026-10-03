@@ -9,6 +9,9 @@ import type {
   Perspective,
   PerspectiveAssignment,
   Requirement,
+  RequirementChangeProposal,
+  RequirementMatch,
+  RequirementQualityFinding,
   RequirementSource,
   Task,
   Verification,
@@ -34,6 +37,9 @@ export type ReadinessSnapshot = {
   perspectives: Perspective[];
   assignments: PerspectiveAssignment[];
   requirements: Requirement[];
+  requirementChangeProposals?: RequirementChangeProposal[];
+  requirementMatches?: RequirementMatch[];
+  requirementQualityFindings?: RequirementQualityFinding[];
   requirementSources: RequirementSource[];
   verifications: Verification[];
   gaps: Gap[];
@@ -71,6 +77,9 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     tasks,
   } = snapshot;
 
+  const requirementChangeProposals = snapshot.requirementChangeProposals ?? [];
+  const requirementMatches = snapshot.requirementMatches ?? [];
+  const requirementQualityFindings = snapshot.requirementQualityFindings ?? [];
   const checks: ReadinessCheck[] = [];
 
   const outcomeReady = Boolean(
@@ -84,6 +93,81 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
       ? "Problem statement and desired outcome are defined."
       : "Problem statement and desired outcome must both be defined.",
     relatedObjectIds: [deliverySubject.id],
+  });
+
+  const profilePinned = Boolean(
+    deliverySubject.requirementProfileId && deliverySubject.requirementProfileVersion,
+  );
+  checks.push({
+    code: "REQUIREMENT_PROFILE_PINNED",
+    passed: profilePinned,
+    blocking: true,
+    message: profilePinned
+      ? `Requirement Profile ${deliverySubject.requirementProfileId} v${deliverySubject.requirementProfileVersion} is pinned.`
+      : "A published Requirement Profile version must be selected and pinned.",
+    relatedObjectIds: [deliverySubject.id],
+  });
+
+  const openProfileFindingIds = requirementQualityFindings
+    .filter((finding) => finding.blocking && finding.status === "OPEN")
+    .map((finding) => finding.id);
+  checks.push({
+    code: "REQUIREMENT_PROFILE_COMPLIANT",
+    passed: openProfileFindingIds.length === 0,
+    blocking: true,
+    message:
+      openProfileFindingIds.length === 0
+        ? "No blocking Requirement Profile findings are open."
+        : `${openProfileFindingIds.length} blocking Requirement Profile finding(s) remain open.`,
+    relatedObjectIds: openProfileFindingIds,
+  });
+
+  const activeRequirements = requirements.filter((r) => r.status !== "SUPERSEDED");
+  const classifiedRequirementIds = new Set(
+    requirementChangeProposals
+      .map((proposal) => proposal.proposedRequirementId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const unclassifiedRequirementIds = activeRequirements
+    .filter((requirement) => !classifiedRequirementIds.has(requirement.id))
+    .map((requirement) => requirement.id);
+  checks.push({
+    code: "REQUIREMENT_CHANGES_CLASSIFIED",
+    passed: unclassifiedRequirementIds.length === 0,
+    blocking: true,
+    message:
+      unclassifiedRequirementIds.length === 0
+        ? "All active subject requirements are classified as explicit change proposals."
+        : `${unclassifiedRequirementIds.length} requirement(s) are not linked to a CREATE/MODIFY/SUPERSEDE/RETIRE/NO_CHANGE proposal.`,
+    relatedObjectIds: unclassifiedRequirementIds,
+  });
+
+  const staleProposalIds = requirementChangeProposals
+    .filter((proposal) => proposal.status === "STALE_BASELINE")
+    .map((proposal) => proposal.id);
+  checks.push({
+    code: "NO_STALE_REQUIREMENT_BASELINES",
+    passed: staleProposalIds.length === 0,
+    blocking: true,
+    message:
+      staleProposalIds.length === 0
+        ? "No requirement change proposal targets a stale baseline version."
+        : `${staleProposalIds.length} requirement change proposal(s) must be rebased to the current baseline.`,
+    relatedObjectIds: staleProposalIds,
+  });
+
+  const unresolvedMatchIds = requirementMatches
+    .filter((match) => match.blocking && match.status === "UNREVIEWED")
+    .map((match) => match.id);
+  checks.push({
+    code: "NO_UNRESOLVED_REQUIREMENT_COLLISIONS",
+    passed: unresolvedMatchIds.length === 0,
+    blocking: true,
+    message:
+      unresolvedMatchIds.length === 0
+        ? "No blocking duplicate/overlap/contradiction candidate remains unreviewed."
+        : `${unresolvedMatchIds.length} blocking existing-requirement or active-proposal match(es) require review.`,
+    relatedObjectIds: unresolvedMatchIds,
   });
 
   const requiredPerspectives = perspectives.filter((p) => p.required);
@@ -123,9 +207,7 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     relatedObjectIds: unownedPerspectiveIds,
   });
 
-  const criticalRequirements = requirements.filter(
-    (r) => critical(r.criticality) && r.status !== "SUPERSEDED",
-  );
+  const criticalRequirements = activeRequirements.filter((r) => critical(r.criticality));
 
   const verificationHasAuthority = (verification: Verification) =>
     Boolean(verification.perspectiveId) &&
@@ -298,7 +380,7 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
           (ac) =>
             ac.targetType === "REQUIREMENT" &&
             ac.targetId === r.id &&
-            (ac.targetRevision == null || ac.targetRevision === r.revision),
+            ac.targetRevision === r.revision,
         ),
     )
     .map((r) => r.id);
@@ -313,15 +395,15 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     relatedObjectIds: missingAcceptanceIds,
   });
 
-  const missingEvalIds = requirements
-    .filter((r) => r.requiresEvaluation && r.status !== "SUPERSEDED")
+  const missingEvalIds = activeRequirements
+    .filter((r) => r.requiresEvaluation)
     .filter(
       (r) =>
         !evaluations.some(
           (evaluation) =>
             evaluation.targetType === "REQUIREMENT" &&
             evaluation.targetId === r.id &&
-            (evaluation.targetRevision == null || evaluation.targetRevision === r.revision),
+            evaluation.targetRevision === r.revision,
         ),
     )
     .map((r) => r.id);

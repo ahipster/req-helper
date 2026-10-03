@@ -2,16 +2,17 @@
 
 ## 1. Architectural style
 
-Req Helper is a modular monolith on Cloud Run with Firestore as the authoritative collaborative state store and OpenCode behind a narrow `AgentHarness` boundary.
+Req Helper is a modular monolith on Cloud Run with Firestore as the authoritative collaborative state store and OpenCode behind a narrow AgentHarness boundary.
 
 The PoC separates:
 
-1. domain state — authoritative business/product state in Firestore;
-2. conversation state — user-visible messages in Firestore;
-3. harness state — disposable OpenCode session/execution state;
-4. UI/read-model state — realtime browser snapshots and non-authoritative projections such as My Work.
+1. CURRENT baseline state — requirement catalogue + external knowledge versions;
+2. Delivery Subject PROPOSED state — change proposals/revisions/findings;
+3. conversation state — user-visible messages;
+4. harness state — disposable OpenCode session/execution state;
+5. UI/read-model state — Firestore listeners and projections.
 
-Only authoritative Firestore domain state determines readiness and final handoff.
+Only authoritative Firestore domain state determines readiness/handoff.
 
 ## 2. GCP topology
 
@@ -24,6 +25,9 @@ Next.js + React + assistant-ui
 Req Helper Cloud Run
 - authn/authz
 - domain command services
+- requirement profile evaluator
+- current requirement retrieval/matching
+- change-set service
 - task/workflow controller
 - context builder
 - readiness evaluator
@@ -32,367 +36,313 @@ Req Helper Cloud Run
         |                         |
         v                         v
 Cloud Firestore              OpenCodeHarness
-(authoritative + read models)     |
+        |                         |
         |                         v
-        |                   Vertex AI / Model Garden
+        |                    Vertex AI / Model Garden
         v
 Enterprise adapters
-MCP | REST | Search | Files | Repositories
+MCP | REST | Search | Files | Requirement repositories | Architecture repositories
 
-Large uploaded files -> GCS/external storage, referenced from Firestore.
+Large uploads -> GCS/external storage.
 ```
 
-## 3. Frontend
+## 3. Frontend / assistant-ui
 
-Recommended:
+Next.js + React + assistant-ui + normal React/shadcn primitives.
 
-- Next.js + React + TypeScript;
-- assistant-ui for conversation/tool rendering;
-- shadcn/ui or equivalent primitives;
-- Firestore listeners for authorized shared state/read projections;
-- backend APIs for authoritative mutations.
+assistant-ui modes:
 
-assistant-ui owns interaction rendering, not product state.
+- chat for questions/explanations;
+- Tool UI for known domain actions;
+- form-filling copilot for structured drafts;
+- constrained Generative UI for read/propose-oriented compositions;
+- Interactables only for non-authoritative scratch state in P0.
 
-One logical chat thread maps to:
+See `docs/ASSISTANT_UI_INTERACTIONS.md`.
+
+The model never gets an unrestricted UI mutation channel. Tool/generative actions dispatch known typed commands.
+
+## 4. Current baseline architecture
+
+### Requirement Catalogue
 
 ```text
-deliverySubjectId + perspectiveId + participantId
+requirementCatalog/{stableId}
+  currentVersion
+  type
+  capabilityRefs
+  lifecycle
+
+requirementCatalog/{stableId}/versions/{n}
+  immutable semantic snapshot
 ```
 
-Never have several simultaneously active humans writing into one OpenCode session.
+The catalogue may be imported/synchronized from an enterprise requirements repository. Subject workflows treat it as read-only.
 
-## 4. Identity, access and authority
+### Knowledge baseline
 
-Three layers remain distinct:
+KnowledgeProvider retrieves external artifacts with stable identity/version/fingerprint where available. Subject KnowledgeReference snapshots that metadata; ProposedDiff pins the analyzed baseline.
 
-### Global application capability
+## 5. Proposed change architecture
 
-`ADMIN | PARTICIPANT | DELIVERY_LEAD | WAR_ROOM_OPERATOR`
+Delivery Subject contains:
 
-### Delivery Subject membership
+```text
+requirements                   # proposed content
+requirementRevisions           # immutable subject revisions
+requirementChangeProposals     # CREATE/MODIFY/SUPERSEDE/RETIRE/NO_CHANGE
+requirementMatches             # baseline/active-proposal collision review
+requirementQualityFindings     # pinned profile compliance
+requirementSources             # provenance
+proposedDiffs                  # knowledge changes
+```
 
-`SPONSOR | DELIVERY_LEAD | PARTICIPANT | OBSERVER`
+Invariant:
 
-Membership controls access to a specific subject.
+```text
+CURRENT baseline != subject proposal
+READY/HANDED_OFF != baseline promotion
+```
 
-### Perspective authority
+## 6. Requirement Profile architecture
 
-`OWNER | DELEGATE | CONTRIBUTOR | REVIEWER`
+```text
+requirementProfiles/{profileId}
+  currentPublishedVersion
 
-OWNER/DELEGATE can create authoritative verification for their perspective. REVIEWER is advisory.
+requirementProfiles/{profileId}/versions/{version}
+  DRAFT | PUBLISHED | RETIRED
+  required perspectives
+  per-type quality policies
+  typed detail field definitions
+  acceptance/eval rules
+  matching/collision policies
+```
 
-A global DELIVERY_LEAD role only means the user may lead subjects. Subject membership determines which subject they actually lead.
+Published versions are immutable. Subject pins exact ID/version. Profile evaluation is deterministic and outputs RequirementQualityFinding records.
 
-## 5. Backend/domain modules
+## 7. Backend modules
 
 ### DeliverySubjectModule
-Lifecycle, scope, constraints, success measures, aggregate revision.
+Lifecycle, subject kind, profile pinning/upgrade, scope and aggregate revision.
 
-### AccessModule
-Subject memberships, global capability checks and subject-scoped authorization.
+### RequirementProfileModule
+Draft/version/publish/compare and deterministic profile evaluation.
 
-### PerspectiveModule
-Perspective catalogue, confirmation, assignments and authority checks.
+### RequirementCatalogueModule
+Read/import/sync current requirements and immutable versions. No subject promotion path in P0.
 
-### SourceModule
-SourceArtifact metadata/GCS references, Evidence and enterprise source linkage.
+### RequirementMatchingModule
+Retrieves current catalogue candidates + active subject proposals; persists RequirementMatch classifications.
 
-### ContributionModule
-Human statements, epistemic mode and confidence semantics.
+### ChangeSetModule
+RequirementChangeProposal lifecycle, baseline pinning, stale-baseline checks and package change operations.
 
 ### RequirementModule
-Current Requirement, immutable RequirementRevision, RequirementSource and one manual/AI edit path.
-
-### VerificationModule
-Append-only revision-bound human Verification and verifier-authority checks.
-
-### ResolutionModule
-Gaps, assumptions, N-party conflicts, positions, decisions and follow-up tasks.
+Proposed Requirement + immutable RequirementRevision + RequirementSource; shared human/AI edit path.
 
 ### KnowledgeModule
-KnowledgeReferences and ProposedDiffs.
+KnowledgeReference version/fingerprint + ProposedDiff stale-source semantics.
+
+### Access/Perspective/Task/Contribution/Verification/Resolution modules
+Existing role, task, evidence, verification, gaps/assumptions/conflicts/decisions semantics remain.
 
 ### WorkPackageModule
-Target implementation area/team, dependencies, acceptance criteria and evals.
+Groups proposed changes into implementation areas with dependencies/acceptance/evals.
 
 ### ReadinessModule
-Pure/deterministic checks over canonical snapshots.
+Deterministic checks including profile compliance, change classification, stale baseline and match review.
 
 ### AgentThreadModule
-OpenCode session mapping, lease, session generation and exact context revision actually presented.
+OpenCode session mapping, lease and exact context revision presented.
 
 ### PackageModule
-JSON/Markdown export and read-only downstream package/work-package APIs.
+Outputs explicit change-set JSON/Markdown/read APIs.
 
-### InboxProjectionModule
-Maintains `users/{uid}/taskInbox` from authoritative tasks/membership so My Work can be realtime without weakening subject isolation.
-
-### AuditModule
-Append-only DomainEvents and AgentRun traces.
-
-## 6. Firestore persistence shape
-
-See `docs/FIRESTORE_MODEL.md` for canonical details.
+## 8. Requirement discovery/matching flow
 
 ```text
-users/{userId}
-  /taskInbox                  # non-authoritative read projection
-
-deliverySubjects/{subjectId}
-  /members
-  /sourceArtifacts
-  /perspectives
-  /assignments
-  /tasks
-  /contributions
-  /evidence
-  /verifications
-  /knowledgeRefs
-  /proposedDiffs
-  /requirements
-  /requirementRevisions
-  /requirementSources
-  /gaps
-  /conflicts
-  /assumptions
-  /decisions
-  /workPackages
-  /acceptanceCriteria
-  /evaluations
-  /dependencies
-  /messages
-  /events
-  /agentThreads
-  /agentRuns
+candidate semantic requirement
+ -> derive type + capabilities + linked enterprise context
+ -> search CURRENT catalogue
+ -> search ACTIVE proposals in other subjects
+ -> rank/classify:
+      DUPLICATE | OVERLAPS | CONTRADICTS | RELATED
+ -> persist RequirementMatch
+ -> propose operation:
+      CREATE | MODIFY | SUPERSEDE | RETIRE | NO_CHANGE
+ -> human resolves blocking ambiguity
 ```
 
-Growing data/history remains in subcollections. Delivery Subject root is bounded summary/state.
+Matching is advisory evidence; human/domain rules determine accepted operation.
 
-The task inbox is never authoritative. Task create/reassign/status changes update the projection; subject-access removal deletes that subject's inbox items for the user.
+P0 retrieval may use lexical filters + capability/context refs + model/semantic similarity. Do not add a vector DB unless needed.
 
-## 7. Deterministic application workflow
+## 9. Baseline staleness
 
-No generic workflow engine is required in P0.
+At meaningful proposal/readiness points:
 
 ```text
-create signal/source artifacts
- -> clarify problem/outcome/scope
- -> confirm subject membership + perspectives
- -> assign perspective humans
- -> create targeted tasks + task-inbox projections
- -> persist human answer
- -> task ANSWERED -> PROCESSING
- -> OpenCode extracts structured proposals
- -> validate/authz/revision/idempotency checks
- -> persist contribution/evidence/requirement revision/source/verification/etc.
- -> update authoritative Task + inbox projection
- -> create targeted follow-ups/conflicts as needed
- -> task COMPLETED or WAITING_ON_OTHER
- -> converge
- -> work-package split
- -> acceptance/evals
- -> deterministic readiness
- -> package API/export
+proposal.baselineVersion
+        vs
+catalogue.currentVersion
 ```
 
-Human waiting is durable Task state, never suspended process memory.
+Mismatch -> `STALE_BASELINE` -> block READY -> compare/rebase/reassess.
 
-## 8. Canonical task lifecycle
+Knowledge diff uses source version/fingerprint equivalently.
+
+## 10. Profile evaluation flow
 
 ```text
-OPEN -> IN_PROGRESS -> ANSWERED -> PROCESSING -> COMPLETED
-                     \-> WAITING_ON_OTHER -> IN_PROGRESS
-Any nonterminal -> CANCELLED
+pinned RequirementProfileVersion
+        +
+proposed requirements/acceptance/evals/perspectives/matches
+        |
+        v
+deterministic evaluator
+        |
+        v
+RequirementQualityFinding[]
 ```
 
-AgentRun status is separate. Human answer is persisted before OpenCode invocation.
+Profile rules must not rely on an LLM judgment for basic field/count/type constraints. AI may explain findings or propose fixes.
 
-## 9. OpenCode harness boundary
-
-```ts
-export interface AgentHarness {
-  ensureThread(input: EnsureThreadInput): Promise<AgentThreadHandle>;
-  prompt<T>(input: HarnessPrompt<T>): Promise<HarnessResult<T>>;
-  stream(input: HarnessStreamPrompt): AsyncIterable<HarnessEvent>;
-  cancel(runId: string): Promise<void>;
-}
-```
-
-Required behavior:
-
-- `opencodeSessionId` is recoverable metadata only;
-- lost session -> create replacement + increment generation + FULL hydrate;
-- serialize prompts per AgentThread using Firestore lease;
-- different threads may execute concurrently;
-- every structured output validates before domain commands;
-- every mutating command checks authz + expected revision + idempotency;
-- OpenCode never receives unrestricted Firestore credentials.
-
-## 10. Context synchronization
-
-AgentThread stores `contextRevisionPresented`:
-
-> highest Delivery Subject revision whose authoritative state was actually presented to the current OpenCode session.
-
-Never set it to same-run `domainRevisionAtEnd` unless that resulting state was explicitly presented back to the session.
-
-P0 hydration:
+## 11. Assistant interaction flow
 
 ```text
-new/recreated session -> FULL
-no presented revision -> FULL
-current == presented  -> MINIMAL
-current != presented  -> FULL
+OpenCode reasons over authoritative context
+ -> calls known tool / proposes structured output
+ -> assistant-ui renders Tool UI or constrained generated view
+ -> human edits/approves
+ -> backend command
+ -> authz + schema + target/baseline revision + idempotency
+ -> Firestore transaction
 ```
 
-True DELTA hydration is optional later.
+Form copilot edits local draft state until explicit save/publish.
 
-ContextEnvelope includes current scope/task/perspective, relevant requirements/sources/active verifications, contributions, decisions/conflicts/gaps/assumptions, knowledge and recent events.
+## 12. OpenCode context envelope
 
-## 11. Requirement mutation path
-
-Human `[Edit]` and AI synthesis use one service.
-
-A semantic edit:
-
-1. checks access/authority/current revision;
-2. appends RequirementRevision;
-3. increments Requirement revision;
-4. writes RequirementSource links;
-5. preserves prior Verification for audit but makes old revision ineligible;
-6. makes old requirement-targeted acceptance/evals ineligible;
-7. reassesses conflicts/gaps;
-8. appends DomainEvent.
-
-Requirement-targeted AcceptanceCriterion/Evaluation must always carry `targetRevision`.
-
-## 12. Conflict orchestration
-
-Conflict is N-party.
+P0 FULL hydration includes bounded relevant:
 
 ```text
-Conflict detected
- -> participant-specific tasks
- -> independent participant threads capture Position/Evidence
- -> shared conflict page aggregates positions
- -> AI produces neutral summary/options
- -> named human decision owner records Decision or source correction
- -> conflict resolves
- -> affected requirements are reassessed
+DeliverySubject + revision
+pinned RequirementProfileVersion/rules
+current task/perspective/authority
+CURRENT requirement catalogue candidates + exact versions
+ACTIVE proposal collisions
+RequirementChangeProposals + RequirementMatches
+proposed Requirements/current revisions/sources/verifications
+RequirementQualityFindings
+KnowledgeReferences + ProposedDiffs/baseline versions
+contributions/evidence
+conflicts/gaps/assumptions/decisions
+work packages/acceptance/evals
+recent domain events
 ```
 
-The shared conflict page is a shared view, not a shared OpenCode session.
+Session memory conflicting with authoritative CURRENT/PROPOSED context loses.
 
 ## 13. Realtime collaboration
 
-Browsers subscribe narrowly:
+Subscriptions remain narrow:
 
-- My Work: current user's private `users/{uid}/taskInbox` projection;
-- Overview: subject summary/perspectives/blockers/readiness;
-- Drill: current task/thread messages/relevant structured state;
-- Requirement detail: current requirement + history/provenance/verification/acceptance/evals;
-- Conflict workspace: conflict positions/tasks/decision;
-- War Room: recent AgentRuns/events/tasks.
+- My Work -> user taskInbox;
+- Overview -> subject + change counts/profile findings/blockers;
+- Drill -> task/thread + relevant baseline/proposal/matches;
+- Change Set -> proposals/current refs/findings;
+- Requirement Detail -> baseline version + proposed revision/history/provenance/verification;
+- Catalogue -> current requirements/history;
+- Conflict -> positions/tasks/decision;
+- War Room -> agent runs/events/baseline/profile metadata.
 
-Remote updates must not erase unsent local chat drafts. Editing stale structured state produces a revision warning rather than silent overwrite.
+## 14. Security
 
-Opening any task-inbox item reloads/re-authorizes authoritative subject/task state.
+- subject reads require membership or admin policy;
+- profiles/catalogue are signed-in read-only in PoC;
+- authoritative mutations are backend-only;
+- profile publishing/catalogue import-promotion paths are privileged backend operations;
+- no OpenCode/Vertex/Firestore admin credentials in browser.
 
-## 14. Browser authorization
+## 15. Requirement mutation path
 
-Firestore Security Rules enforce active subject membership for subject reads. Admin/global-template reads are separate. A user reads only their own task-inbox projection (ADMIN may read under PoC policy).
+Human/AI semantic proposal edit:
 
-Authoritative writes go through Cloud Run backend services, which enforce membership, global capability, subject role, perspective authority and revision/invariants.
+1. authorize;
+2. check current subject Requirement revision;
+3. append RequirementRevision;
+4. update proposed Requirement;
+5. write RequirementSources;
+6. invalidate prior revision-bound verification/acceptance/evals for readiness;
+7. re-evaluate pinned Requirement Profile;
+8. re-run relevant matching when type/capabilities/semantics changed;
+9. reassess conflicts/gaps;
+10. append DomainEvent.
 
-War-room permission does not imply assignment-management permission.
+This does not mutate baseline catalogue.
 
-## 15. Source artifacts
-
-New Signal may attach links/files.
-
-- metadata: Firestore SourceArtifact;
-- uploaded bytes: GCS or approved external source;
-- evidence/provenance: references to artifact ID/URI;
-- no large file payload inside Firestore documents.
-
-## 16. Work packages / acceptance / evals
-
-A WorkPackage has required `targetAreaRef`, optional target team and optional human coordinator.
-
-AcceptanceCriterion/Evaluation target:
+## 16. Profile version lifecycle
 
 ```text
-REQUIREMENT | WORK_PACKAGE | DELIVERY_SUBJECT
+PUBLISHED v8
+  |
+  +-- create DRAFT v9
+           |
+           +-- form-copilot edits draft
+           +-- validate
+           +-- PUBLISH v9
 ```
 
-For REQUIREMENT targets, `targetRevision` is mandatory. WorkPackage/DeliverySubject targets are not revision-bound in P0.
+Subjects pinned to v8 remain v8. Upgrade preview computes delta findings before explicit upgrade.
 
-## 17. Dependency semantics
+## 17. Readiness additions
 
-`blocking=true` means unresolved dependency prevents READY. An owner helps accountability but does not clear the blocker.
+Notable blockers:
 
-## 18. Readiness
+- no pinned published profile;
+- blocking OPEN profile finding;
+- subject Requirement lacks explicit change proposal;
+- stale requirement baseline;
+- blocking unreviewed RequirementMatch;
+- plus existing authority/provenance/conflict/dependency/task/acceptance/eval checks.
 
-Readiness consumes canonical Firestore-backed snapshots and is deterministic.
+## 18. Downstream package boundary
 
-Notable invariants:
+Package contains explicit operations:
 
-- all required perspectives confirmed;
-- all required perspectives owned/delegated regardless of criticality;
-- current-revision authoritative human verification + provenance for HIGH/CRITICAL requirements;
-- unresolved blocking gap/conflict/assumption/dependency/task blocks;
-- populated work packages target a real implementation area;
-- current-revision acceptance/evals where required.
+```text
+MODIFY REQ-248 v6 -> R-17 rev3
+CREATE -> R-18 rev2
+RETIRE REQ-104 v2
+```
 
-## 19. Downstream package boundary
+and knowledge changes pinned to current source versions.
 
-P0 supports:
+P0 APIs:
 
 ```text
 GET /api/delivery-subjects/{id}/package
 GET /api/delivery-subjects/{id}/work-packages/{workPackageId}
 ```
 
-and JSON/Markdown exports from the same persisted model.
+No P0 endpoint automatically makes these changes CURRENT.
 
-Downstream consumers receive domain state/provenance/verification/readiness, never OpenCode session state as product truth.
+## 19. Deployment
 
-## 20. Agent-run observability
+- Next.js/API: Cloud Run;
+- Firestore: authoritative PoC state;
+- GCS: large uploads;
+- OpenCode: internal service/embedded process as operationally appropriate;
+- Vertex AI: approved provider/model/region through ADC/workload identity.
 
-Persist:
+## 20. Avoid week-one overbuild
 
-```text
-runId/threadId/sessionGeneration/opencodeSessionId
-subject/perspective/participant
-provider/model/skill versions
-domainRevisionAtStart
-contextRevisionPresentedBefore
-contextRevisionPresentedThisRun
-hydrationMode
-input object IDs/tool calls/structured output
-proposed/applied/rejected commands
-domainRevisionAtEnd
-latency/status/error category
-```
-
-Never persist private chain-of-thought.
-
-## 21. GCP deployment
-
-- Next.js/Node application: Cloud Run.
-- Firestore: approved GCP location.
-- uploaded source files: GCS where uploads are enabled.
-- OpenCode: internal service or embedded process where operationally acceptable.
-- Vertex AI/Model Garden: approved models/region through OpenCode `google-vertex` provider and ADC/workload identity.
-
-OpenCode local storage is disposable. Restart/replacement must be recoverable from Firestore.
-
-## 22. Avoid in week one
-
-- Redis;
-- Kafka/PubSub solely for UI synchronization;
-- LangGraph/Temporal/Camunda;
-- PostgreSQL;
-- custom WebSocket collaboration layer;
-- vector database unless a concrete retrieval failure proves need.
+- generic requirement DSL;
+- generic enterprise graph;
+- automatic cross-system baseline promotion;
+- custom WebSocket layer;
+- Redis/Kafka solely for UI sync;
+- vector DB without demonstrated need;
+- LangGraph/Temporal/Camunda/PostgreSQL;
+- authoritative Interactables state.

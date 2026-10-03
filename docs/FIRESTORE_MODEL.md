@@ -1,28 +1,36 @@
 # Firestore Model
 
-Cloud Firestore is the authoritative shared state store for the Req Helper PoC. This document defines the canonical persistence shape. It must stay aligned with `src/domain/schemas.ts` and `docs/DOMAIN_MODEL.md`.
+Cloud Firestore is the authoritative shared state store for the Req Helper PoC. `src/domain/schemas.ts` and `docs/DOMAIN_MODEL.md` remain canonical.
 
 ## Root collections
 
 ```text
 users/{userId}
-  /taskInbox/{itemId}               # read-only My Work projection
+  /taskInbox/{itemId}                    # non-authoritative My Work projection
 roleTemplates/{roleTemplateId}
 perspectiveTemplates/{perspectiveTemplateId}
+
+requirementProfiles/{profileId}
+  /versions/{versionId}                  # immutable once PUBLISHED
+
+requirementCatalog/{requirementId}
+  /versions/{versionId}                  # immutable current/history snapshots
+
 deliverySubjects/{subjectId}
 ```
 
-The task inbox is a disposable read projection. The authoritative Task always remains under its Delivery Subject.
+Published Requirement Profile versions and Requirement Catalogue versions are reference data. Delivery Subject workflows do not directly overwrite them.
 
 ## Delivery Subject root
-
-`deliverySubjects/{subjectId}` stores bounded aggregate summary/state only:
 
 ```ts
 {
   id,
   title,
   initialSignal,
+  subjectKind?,
+  requirementProfileId?,
+  requirementProfileVersion?,
   problemStatement?,
   desiredOutcome?,
   scopeIn: string[],
@@ -35,15 +43,14 @@ The task inbox is a disposable read projection. The authoritative Task always re
   deliveryLeadId?,
   currentIteration,
   revision,
-  readinessState,
+  readinessState?,
   readinessScore?,
-  summaryCounts?,
   createdAt,
   updatedAt
 }
 ```
 
-`revision` increments on material domain mutation and is the basis for stale-agent detection.
+`revision` increments on material subject-domain mutation.
 
 ## Delivery Subject subcollections
 
@@ -60,6 +67,9 @@ deliverySubjects/{subjectId}/knowledgeRefs/{referenceId}
 deliverySubjects/{subjectId}/proposedDiffs/{diffId}
 deliverySubjects/{subjectId}/requirements/{requirementId}
 deliverySubjects/{subjectId}/requirementRevisions/{revisionId}
+deliverySubjects/{subjectId}/requirementChangeProposals/{proposalId}
+deliverySubjects/{subjectId}/requirementMatches/{matchId}
+deliverySubjects/{subjectId}/requirementQualityFindings/{findingId}
 deliverySubjects/{subjectId}/requirementSources/{sourceLinkId}
 deliverySubjects/{subjectId}/gaps/{gapId}
 deliverySubjects/{subjectId}/conflicts/{conflictId}
@@ -75,172 +85,93 @@ deliverySubjects/{subjectId}/agentThreads/{threadId}
 deliverySubjects/{subjectId}/agentRuns/{runId}
 ```
 
-Use references/stable IDs rather than large nested objects or unbounded arrays.
+## Requirement Profiles
 
-## Membership
-
-`members/{userId}` answers whether a user can access a Delivery Subject and their broad subject role.
+Root record:
 
 ```ts
-{
+requirementProfiles/{profileId} = {
   id,
-  deliverySubjectId,
-  userId,
-  roles: ["SPONSOR" | "DELIVERY_LEAD" | "PARTICIPANT" | "OBSERVER"],
+  name,
+  description?,
+  currentPublishedVersion?,
   active,
   createdAt,
   updatedAt
 }
 ```
 
-Global `DELIVERY_LEAD` capability does not grant access to every subject. Subject membership establishes actual participation in a specific Delivery Subject.
-
-## My Work task-inbox projection
-
-A browser-wide collection-group Task query conflicts with strict subject-membership rules because Firestore security rules are not post-query filters. P0 therefore maintains:
-
-```text
-users/{userId}/taskInbox/{itemId}
-```
-
-Projection shape:
+Version:
 
 ```ts
-{
-  id,
-  userId,
-  deliverySubjectId,
-  taskId,
-  subjectTitle,
-  perspectiveId?,
-  type,
-  title,
-  blocking,
-  status,
-  updatedAt
+requirementProfiles/{profileId}/versions/{version} = {
+  profileId,
+  version,
+  status: "DRAFT" | "PUBLISHED" | "RETIRED",
+  applicableSubjectKinds: [],
+  requiredPerspectiveTypes: [],
+  typePolicies: [],
+  requireExistingRequirementSearchBeforeCreate,
+  duplicateMatchThreshold,
+  contradictionReviewRequired,
+  createdBy,
+  createdAt,
+  publishedAt?
 }
 ```
 
 Rules:
 
-- authoritative Task remains `deliverySubjects/{subjectId}/tasks/{taskId}`;
-- backend services update/remove the projection when assignment/status changes;
-- reassigning a task removes the old assignee projection and creates/updates the new one;
-- removing/deactivating subject membership removes that subject's inbox projections for the user as part of the same application operation/batch;
-- the projection may be rebuilt from authoritative tasks;
-- user may read only their own task inbox (ADMIN may read under PoC policy);
-- opening an inbox item reloads the authoritative Task/subject and re-checks access;
-- no browser writes.
+- DRAFT may be edited only through backend admin commands;
+- PUBLISHED content is immutable;
+- publish updates root `currentPublishedVersion`;
+- subject pins exact profile ID/version;
+- no silent subject upgrade when new version publishes.
 
-## Perspective and Assignment
+## Requirement Catalogue
 
-Perspective status is canonical:
-
-```text
-PROPOSED | CONFIRMED | IN_PROGRESS | COMPLETE | BLOCKED
-```
-
-Assignment relationship:
-
-```text
-OWNER | DELEGATE | CONTRIBUTOR | REVIEWER
-```
-
-Do not store `required` on Assignment. Requiredness belongs to Perspective.
-
-## SourceArtifact
-
-Links or uploaded material are represented by metadata only:
+Stable current identity:
 
 ```ts
-{
-  id,
-  name,
-  mediaType?,
-  storageType: "LINK" | "GCS" | "EXTERNAL",
-  uri,
-  sizeBytes?,
-  sha256?,
-  addedBy,
-  createdAt
+requirementCatalog/{id} = {
+  stableKey,
+  type,
+  title,
+  lifecycle,
+  currentVersion,
+  capabilityRefs: [],
+  authoritativeSourceSystem?,
+  authoritativeExternalId?,
+  createdAt,
+  updatedAt
 }
 ```
 
-Large file bytes do not belong in Firestore.
-
-## Contribution
+Immutable version:
 
 ```ts
-{
-  id,
-  taskId?,
-  authorId,
-  perspectiveId?,
+requirementCatalog/{id}/versions/{version} = {
+  requirementId,
+  version,
+  type,
+  title,
   statement,
-  epistemicMode,
-  ownershipRelationship?,
-  statedConfidence?,
-  extractionConfidence?,
-  evidenceIds: string[],
-  likelyAuthoritativeOwnerId?,
-  createdAt
-}
-```
-
-Confidence is never authority.
-
-## Evidence
-
-Evidence has its own collection so contribution/requirement/conflict records do not point to undefined IDs.
-
-```ts
-{
-  id,
-  kind,
-  sourceId,
-  excerpt?,
-  uri?,
-  createdAt
-}
-```
-
-## Verification
-
-Verification is append-only human judgment and revision-bound where applicable.
-
-Targets:
-
-```text
-CONTRIBUTION        -> no target revision
-REQUIREMENT         -> targetRevision required
-PROPOSED_DIFF       -> targetRevision required
-```
-
-Common fields:
-
-```ts
-{
-  id,
-  targetType,
-  targetId,
-  verifierId,
-  perspectiveId?,
-  verdict: "VERIFIED" | "REJECTED" | "AMENDED",
   rationale?,
-  status: "ACTIVE" | "SUPERSEDED",
-  createdAt
+  criticality,
+  capabilityRefs: [],
+  details: [],
+  sourceVersion?,
+  sourceFingerprint?,
+  publishedAt,
+  publishedBy?
 }
 ```
 
-When a Requirement revision changes, prior Verification records remain for audit but do not satisfy readiness for the new revision.
+A subject never writes these records as part of requirement discovery. P0 may import/sync them from an external source through backend utilities.
 
-## KnowledgeReference and ProposedDiff
+## Proposed subject Requirement
 
-Store external source metadata rather than source content. Proposed diffs are separate records keyed to a KnowledgeReference and have their own revision/timestamps.
-
-## Requirement
-
-Current state:
+`deliverySubjects/{subjectId}/requirements/{id}` is subject-local proposal state:
 
 ```ts
 {
@@ -251,9 +182,10 @@ Current state:
   rationale?,
   priority,
   criticality,
-  status: "DRAFT" | "NEEDS_INPUT" | "PROPOSED" | "CONFLICTED" | "SUPERSEDED",
+  status,
   ownerId?,
-  extractionConfidence?,
+  capabilityRefs?: [],
+  details?: [{ fieldKey, valueType, ...typedValue }],
   requiresEvaluation,
   revision,
   createdAt,
@@ -261,111 +193,120 @@ Current state:
 }
 ```
 
-Verification is deliberately not encoded in Requirement status.
+It is never rendered/labeled as enterprise CURRENT.
 
-Meaning:
-
-- `priority`: delivery urgency/sequencing;
-- `criticality`: consequence if wrong/omitted.
-
-### RequirementRevision
-
-Every semantic human or AI edit appends an immutable revision record. Manual edit and AI edit use the same code path.
-
-### RequirementSource
-
-Provenance is first-class:
+## RequirementChangeProposal
 
 ```ts
 {
   id,
-  requirementId,
-  requirementRevision,
-  sourceKind,
-  sourceId,
-  authoritative,
-  createdAt
-}
-```
-
-Do not rely on embedded source arrays for canonical provenance.
-
-## Conflict
-
-A conflict supports two or more positions:
-
-```ts
-{
-  id,
-  description,
-  positions: [{
-    id,
-    actorId?,
-    perspectiveId?,
-    itemType,
-    itemId,
-    summary,
-    evidenceIds: []
-  }],
-  severity,
-  ownerIds,
-  decisionOwnerId?,
-  blocking,
-  resolution?,
-  decisionId?,
+  deliverySubjectId,
+  changeType: "CREATE" | "MODIFY" | "SUPERSEDE" | "RETIRE" | "NO_CHANGE",
+  baselineRequirementId?,
+  baselineVersion?,
+  proposedRequirementId?,
+  rationale,
   status,
+  relatedConflictIds: [],
+  supersedesProposalIds: [],
   createdAt,
   updatedAt
 }
 ```
 
-Keep `positions` bounded; if war-room usage proves it can grow materially, split into a subcollection later.
+For MODIFY/SUPERSEDE/RETIRE/NO_CHANGE, baseline ID/version pin what was analyzed. If current catalogue advances, service changes status to `STALE_BASELINE` until rebase/reassessment.
 
-## Assumption
+## RequirementMatch
 
-Assumptions include `criticality` and `blocking`, making readiness semantics explicit.
+Persist existing-requirement/parallel-proposal retrieval judgments:
 
-## Task
-
-Canonical task types:
-
-```text
-DRILL | VERIFY | REVIEW | RESOLVE_CONFLICT | FILL_GAP |
-DECIDE | FOLLOW_UP | FINAL_REVIEW
+```ts
+{
+  id,
+  subjectRequirementId,
+  candidateKind: "BASELINE_REQUIREMENT" | "ACTIVE_PROPOSAL",
+  candidateId,
+  candidateVersion?,
+  relationship: "DUPLICATE" | "OVERLAPS" | "CONTRADICTS" | "RELATED",
+  score?,
+  rationale,
+  blocking,
+  status: "UNREVIEWED" | "CONFIRMED" | "DISMISSED",
+  createdAt,
+  updatedAt
+}
 ```
 
-Canonical statuses:
+Blocking UNREVIEWED candidates prevent READY.
+
+## RequirementQualityFinding
+
+Generated by deterministic evaluation of the subject's pinned Requirement Profile version:
+
+```ts
+{
+  id,
+  profileId,
+  profileVersion,
+  requirementId?,
+  ruleId,
+  severity,
+  blocking,
+  message,
+  status: "OPEN" | "RESOLVED" | "WAIVED",
+  waiverDecisionId?,
+  createdAt,
+  updatedAt
+}
+```
+
+Profile upgrade re-evaluates findings only after explicit subject upgrade.
+
+## RequirementRevision and RequirementSource
+
+Every semantic edit appends immutable RequirementRevision. RequirementSource remains the canonical provenance relation and can include:
+
+```text
+CONTRIBUTION | EVIDENCE | KNOWLEDGE_REFERENCE | DECISION |
+ASSUMPTION | SOURCE_ARTIFACT | BASELINE_REQUIREMENT | AI_INFERENCE
+```
+
+Source version may be retained.
+
+## KnowledgeReference / ProposedDiff
+
+KnowledgeReference includes stable/source identity plus `version` and optional `fingerprint`.
+
+ProposedDiff records `baselineVersion`/`baselineFingerprint` where available. A source-version change can move diff to `STALE_BASELINE`; P0 never writes it back automatically.
+
+## Membership / assignments / tasks
+
+Membership controls subject access. Perspective assignment controls authority. Task lifecycle remains:
 
 ```text
 OPEN | IN_PROGRESS | ANSWERED | PROCESSING |
 WAITING_ON_OTHER | COMPLETED | CANCELLED
 ```
 
-`ANSWERED` means human input is saved. `PROCESSING` means AI/application logic is interpreting it. `COMPLETED` means resulting structured changes/follow-ups are durable.
+My Work reads private rebuildable `users/{uid}/taskInbox`; authoritative task remains subject-scoped.
 
-## WorkPackage
+## Verification
 
-```ts
-{
-  id,
-  name,
-  targetAreaRef,
-  targetTeamId?,
-  coordinatorId?,
-  status,
-  requirementIds: [],
-  dependencyIds: [],
-  knowledgeReferenceIds: [],
-  createdAt,
-  updatedAt
-}
+Append-only human judgment:
+
+```text
+CONTRIBUTION        -> no target revision
+REQUIREMENT         -> targetRevision required
+PROPOSED_DIFF       -> targetRevision required
 ```
 
-`targetAreaRef` is required. A human coordinator is not a substitute for implementation-area identity.
+Requirement verification relates to proposed subject Requirement revision, not catalogue version promotion.
 
-## AcceptanceCriterion and Evaluation
+## Conflict / Assumption / Decision / WorkPackage
 
-Both use generalized target types:
+Conflict supports 2+ positions, including baseline/proposal references. Assumptions use explicit criticality/blocking semantics. Decisions remain human-owned. WorkPackage holds proposed requirement IDs and target implementation area/team.
+
+## AcceptanceCriterion / Evaluation
 
 ```text
 REQUIREMENT      -> targetRevision required
@@ -373,121 +314,45 @@ WORK_PACKAGE     -> no requirement revision
 DELIVERY_SUBJECT -> no requirement revision
 ```
 
-This allows integration/package-level acceptance instead of forcing every check onto a single requirement.
+## AgentThread / AgentRun
 
-## Dependency semantics
+Unchanged core semantics: OpenCode state is disposable. `contextRevisionPresented` means the highest subject revision actually shown to that session. Never equate same-run `domainRevisionAtEnd` with context presented unless re-presented.
 
-`blocking=true` means the dependency must be resolved before READY. Ownership alone does not make it acceptable.
+Context envelopes should include:
 
-## Messages
-
-User-visible conversation continuity is stored in `messages`. Messages are not authoritative requirements.
-
-## AgentThread
-
-```ts
-{
-  id,
-  perspectiveId?,
-  participantId,
-  opencodeSessionId?,
-  sessionGeneration,
-  status,
-  leaseOwner?,
-  leaseExpiresAt?,
-  contextRevisionPresented?,
-  lastRunId?,
-  lastMessageAt?,
-  createdAt,
-  updatedAt
-}
-```
-
-`contextRevisionPresented` means the highest Delivery Subject revision whose authoritative context was actually presented to the OpenCode session.
-
-Do not set it to `domainRevisionAtEnd` merely because the same run caused mutations. Those mutations have not necessarily been presented back to the session yet.
-
-## AgentRun
-
-Persist enough to diagnose context staleness:
-
-```text
-runId
-threadId
-sessionGeneration
-opencodeSessionId
-participantId
-perspectiveId
-domainRevisionAtStart
-contextRevisionPresentedBefore
-contextRevisionPresentedThisRun
-hydrationMode = FULL | DELTA | MINIMAL
-inputObjectIds
-skill versions
-provider/model
-tool calls
-structured output
-proposed commands
-applied/rejected command IDs
-domainRevisionAtEnd
-status/error category
-startedAt/endedAt
-```
-
-Never persist private chain-of-thought.
-
-## Concurrency
-
-### Human edits
-
-Use server-side transactions for invariant-sensitive writes and increment Delivery Subject revision atomically.
-
-### AI commands
-
-Every material command carries:
-
-- deterministic/idempotency key;
-- target object IDs;
-- expected domain/object revision;
-- structured payload.
-
-Before commit, re-read current state. Reject/recompute stale commands rather than last-write-wins.
-
-### Same OpenCode thread
-
-Serialize using AgentThread lease.
-
-### Different threads
-
-May execute concurrently; domain revisions protect shared objects.
+- pinned Requirement Profile/version and relevant type rules;
+- current baseline requirements/versions relevant to the task;
+- proposed change operations;
+- requirement matches/collisions;
+- proposed requirement revisions/details;
+- current knowledge refs/diffs;
+- profile findings;
+- existing gaps/conflicts/decisions.
 
 ## Realtime subscriptions
 
-Subscribe narrowly.
-
-- My Work: `users/{currentUser}/taskInbox`, filtered by `status` as needed.
-- Delivery Overview: root summary + perspectives + blockers + recent events.
-- Drill Workspace: current task + thread messages + relevant requirements/conflicts.
-- Requirement detail: current requirement + revisions + sources + verifications + acceptance/evals.
-- Conflict workspace: conflict + related tasks/positions/decision.
-- War Room: recent AgentRuns/events/tasks.
+- My Work: current user's `taskInbox`.
+- Delivery Overview: root + change counts + profile findings + blockers.
+- Drill: task/messages + current baseline/proposed requirement/change/matches.
+- Requirement detail: baseline reference/version + proposal/revisions/sources/verifications/findings.
+- Catalogue: current requirement records/history/proposal references.
+- Conflict: positions/tasks/decision.
+- War Room: AgentRuns/events/tasks/baseline/profile metadata.
 
 ## Security/access
 
-Browser reads of Delivery Subject data are restricted by active Delivery Subject membership (or ADMIN policy). Admin/global-template access is governed separately.
+- subject data: active membership or ADMIN policy;
+- profiles/catalogue: signed-in read-only in PoC;
+- authoritative writes: backend-only;
+- profile publish and catalogue promotion/import: privileged backend service only;
+- browser never receives admin/OpenCode/Vertex credentials.
 
-The task inbox projection is readable only by its owning user (and ADMIN under PoC policy), is not authoritative, and must be cleaned up when subject access is revoked.
+## Data-size / consistency rules
 
-P0 authoritative writes remain backend-only. The browser never receives Firestore admin credentials or OpenCode/Vertex credentials.
-
-## Data-size rules
-
-- no full large enterprise documents in Firestore;
-- no long file blobs in Firestore;
+- no large source bytes in Firestore;
 - no unbounded arrays on Delivery Subject root;
-- growing history lives in subcollections;
-- relations become first-class documents when they need lifecycle/provenance/queryability.
-
-## When Firestore stops fitting
-
-Add a projection/secondary store later only for demonstrated needs such as complex cross-subject analytics, heavy SQL, graph traversal or stricter relational reporting. Firestore remains appropriate for the collaborative operational PoC.
+- versions/history/relations as documents/subcollections;
+- current baseline versions are immutable snapshots;
+- subject proposals never overwrite baseline records;
+- every AI mutation carries expected revisions/idempotency keys;
+- stale baseline and stale subject revision are explicit states, never last-write-wins.

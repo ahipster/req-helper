@@ -9,6 +9,9 @@ import {
   evaluations,
   gaps,
   perspectives,
+  requirementChangeProposals,
+  requirementMatches,
+  requirementQualityFindings,
   requirementSources,
   requirements,
   tasks,
@@ -23,6 +26,9 @@ const seedSnapshot = (): ReadinessSnapshot => ({
   perspectives,
   assignments,
   requirements,
+  requirementChangeProposals,
+  requirementMatches,
+  requirementQualityFindings,
   requirementSources,
   verifications,
   gaps,
@@ -37,7 +43,7 @@ const seedSnapshot = (): ReadinessSnapshot => ({
 });
 
 describe("evaluateReadiness", () => {
-  it("keeps the seeded war-room scenario NOT_READY with actionable blockers", () => {
+  it("keeps the seeded war-room scenario NOT_READY with profile/baseline/collision blockers", () => {
     const result = evaluateReadiness(seedSnapshot());
 
     expect(result.state).toBe("NOT_READY");
@@ -47,14 +53,102 @@ describe("evaluateReadiness", () => {
       .filter((check) => check.blocking && !check.passed)
       .map((check) => check.code);
 
+    expect(failedCodes).toContain("REQUIREMENT_PROFILE_COMPLIANT");
+    expect(failedCodes).toContain("NO_UNRESOLVED_REQUIREMENT_COLLISIONS");
     expect(failedCodes).toContain("CRITICAL_REQUIREMENTS_VERIFIED");
-    expect(failedCodes).toContain("CRITICAL_REQUIREMENTS_AUTHORITATIVE_PROVENANCE");
     expect(failedCodes).toContain("NO_BLOCKING_GAPS");
     expect(failedCodes).toContain("NO_BLOCKING_CONFLICTS");
     expect(failedCodes).toContain("CRITICAL_REQUIREMENTS_PACKAGED");
     expect(failedCodes).toContain("CRITICAL_REQUIREMENTS_HAVE_ACCEPTANCE");
     expect(failedCodes).toContain("REQUIRED_EVALS_DEFINED");
     expect(failedCodes).toContain("NO_OPEN_BLOCKING_TASKS");
+  });
+
+  it("requires a pinned Requirement Profile version", () => {
+    const snapshot = seedSnapshot();
+    const result = evaluateReadiness({
+      ...snapshot,
+      deliverySubject: {
+        ...snapshot.deliverySubject,
+        requirementProfileId: undefined,
+        requirementProfileVersion: undefined,
+      },
+    });
+
+    expect(
+      result.checks.find((c) => c.code === "REQUIREMENT_PROFILE_PINNED")?.passed,
+    ).toBe(false);
+  });
+
+  it("blocks a subject requirement that is not classified as a change proposal", () => {
+    const snapshot = seedSnapshot();
+    const result = evaluateReadiness({
+      ...snapshot,
+      requirementChangeProposals: snapshot.requirementChangeProposals?.filter(
+        (proposal) => proposal.proposedRequirementId !== "r-api-exposure",
+      ),
+    });
+
+    expect(
+      result.checks.find((c) => c.code === "REQUIREMENT_CHANGES_CLASSIFIED")?.passed,
+    ).toBe(false);
+  });
+
+  it("blocks stale baseline requirement proposals", () => {
+    const snapshot = seedSnapshot();
+    const result = evaluateReadiness({
+      ...snapshot,
+      requirementChangeProposals: snapshot.requirementChangeProposals?.map((proposal) =>
+        proposal.id === "cp-api" ? { ...proposal, status: "STALE_BASELINE" as const } : proposal,
+      ),
+    });
+
+    expect(
+      result.checks.find((c) => c.code === "NO_STALE_REQUIREMENT_BASELINES")?.passed,
+    ).toBe(false);
+  });
+
+  it("blocks unreviewed duplicate/contradiction candidates", () => {
+    const result = evaluateReadiness(seedSnapshot());
+    expect(
+      result.checks.find((c) => c.code === "NO_UNRESOLVED_REQUIREMENT_COLLISIONS")?.passed,
+    ).toBe(false);
+  });
+
+  it("allows a reviewed/dismissed collision to clear the collision check", () => {
+    const snapshot = seedSnapshot();
+    const result = evaluateReadiness({
+      ...snapshot,
+      requirementMatches: snapshot.requirementMatches?.map((match) =>
+        match.id === "match-parallel-proposal" ? { ...match, status: "DISMISSED" as const } : match,
+      ),
+    });
+
+    expect(
+      result.checks.find((c) => c.code === "NO_UNRESOLVED_REQUIREMENT_COLLISIONS")?.passed,
+    ).toBe(true);
+  });
+
+  it("blocks open profile quality findings", () => {
+    const result = evaluateReadiness(seedSnapshot());
+    expect(
+      result.checks.find((c) => c.code === "REQUIREMENT_PROFILE_COMPLIANT")?.passed,
+    ).toBe(false);
+  });
+
+  it("allows resolved profile findings to clear the profile check", () => {
+    const snapshot = seedSnapshot();
+    const result = evaluateReadiness({
+      ...snapshot,
+      requirementQualityFindings: snapshot.requirementQualityFindings?.map((finding) => ({
+        ...finding,
+        status: "RESOLVED" as const,
+      })),
+    });
+
+    expect(
+      result.checks.find((c) => c.code === "REQUIREMENT_PROFILE_COMPLIANT")?.passed,
+    ).toBe(true);
   });
 
   it("blocks a required perspective that is still only proposed, regardless of medium criticality", () => {
