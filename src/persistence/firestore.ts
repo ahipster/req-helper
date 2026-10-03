@@ -20,6 +20,16 @@ export const roleTemplatesCollection = (db: Firestore = firestore) => db.collect
 export const perspectiveTemplatesCollection = (db: Firestore = firestore) =>
   db.collection("perspectiveTemplates");
 
+/**
+ * Non-authoritative realtime projection used by My Work. The application
+ * service must upsert/delete these items whenever task assignment/status or
+ * Delivery Subject membership changes.
+ */
+export const userTaskInboxCollection = (
+  userId: string,
+  db: Firestore = firestore,
+) => usersCollection(db).doc(userId).collection("taskInbox");
+
 export const subjectRef = (db: Firestore, subjectId: string) =>
   db.collection("deliverySubjects").doc(subjectId);
 
