@@ -16,6 +16,8 @@ import {
   workPackages,
 } from "../src/seed/customer-status-change.js";
 
+const now = "2026-10-03T08:00:00+02:00";
+
 const seedSnapshot = (): ReadinessSnapshot => ({
   deliverySubject,
   perspectives,
@@ -69,6 +71,8 @@ describe("evaluateReadiness", () => {
           criticality: "MEDIUM",
           required: true,
           status: "PROPOSED",
+          createdAt: now,
+          updatedAt: now,
         },
       ],
     });
@@ -96,7 +100,7 @@ describe("evaluateReadiness", () => {
           perspectiveId: "p-data",
           verdict: "VERIFIED",
           status: "ACTIVE",
-          createdAt: "2026-10-03T08:00:00+02:00",
+          createdAt: now,
         },
       ],
     });
@@ -119,6 +123,8 @@ describe("evaluateReadiness", () => {
           userId: reviewerId,
           relationship: "REVIEWER",
           status: "ACTIVE",
+          createdAt: now,
+          updatedAt: now,
         },
       ],
       verifications: [
@@ -132,7 +138,7 @@ describe("evaluateReadiness", () => {
           perspectiveId: "p-data",
           verdict: "VERIFIED",
           status: "ACTIVE",
-          createdAt: "2026-10-03T08:00:00+02:00",
+          createdAt: now,
         },
       ],
     });
@@ -142,7 +148,7 @@ describe("evaluateReadiness", () => {
     ).toBe(false);
   });
 
-  it("accepts current-revision verification from an active OWNER", () => {
+  it("accepts current-revision verification from active OWNERs", () => {
     const snapshot = seedSnapshot();
     const result = evaluateReadiness({
       ...snapshot,
@@ -157,7 +163,7 @@ describe("evaluateReadiness", () => {
           perspectiveId: "p-data",
           verdict: "VERIFIED",
           status: "ACTIVE",
-          createdAt: "2026-10-03T08:00:00+02:00",
+          createdAt: now,
         },
         {
           id: "v-api-owner",
@@ -169,7 +175,7 @@ describe("evaluateReadiness", () => {
           perspectiveId: "p-api",
           verdict: "VERIFIED",
           status: "ACTIVE",
-          createdAt: "2026-10-03T08:00:00+02:00",
+          createdAt: now,
         },
       ],
     });
@@ -208,6 +214,8 @@ describe("evaluateReadiness", () => {
           ownerId: "u-architect",
           resolved: false,
           blocking: true,
+          createdAt: now,
+          updatedAt: now,
         },
       ],
     });
