@@ -171,6 +171,7 @@ export const ArchitectureIngestionRunSchema = z.object({
   status: z.enum(["QUEUED", "SCANNING", "EXTRACTING", "RECONCILING", "VALIDATING", "SUCCEEDED", "FAILED"]),
   schemaVersion: z.string(),
   promptSkillVersion: z.string(),
+  securityPolicyVersion: z.string().default("poc-v1"),
   providerId: z.string().optional(),
   modelId: z.string().optional(),
   inputFileCount: z.number().int().nonnegative().default(0),
@@ -265,6 +266,62 @@ export const RequirementArchitectureImpactSchema = z
     }
   });
 
+/**
+ * Versioned traversal rules define what "we assessed the relevant topology"
+ * means. This prevents one confirmed system from being mistaken for complete
+ * impact coverage when several connected systems are relevant.
+ */
+export const ArchitectureTraversalPolicySchema = z.object({
+  id: z.string().min(1),
+  version: z.number().int().positive(),
+  maxDepth: z.number().int().positive().max(12),
+  relationshipTypes: z.array(ArchitectureRelationshipType).min(1),
+  seedElementTypes: z.array(ArchitectureElementType).min(1),
+  includeElementTypes: z.array(ArchitectureElementType).min(1),
+  createdAt: z.string(),
+});
+
+export const ArchitectureImpactAssessmentSchema = z
+  .object({
+    id: z.string().min(1),
+    deliverySubjectId: z.string().min(1),
+    requirementId: z.string().min(1),
+    requirementRevision: z.number().int().positive(),
+    architectureBaselineId: z.string().min(1),
+    architectureBaselineVersion: z.number().int().positive(),
+    traversalPolicyId: z.string().min(1),
+    traversalPolicyVersion: z.number().int().positive(),
+    seedElementKeys: z.array(z.string().min(1)).min(1),
+    candidateElementKeys: z.array(z.string().min(1)).default([]),
+    assessedElementKeys: z.array(z.string().min(1)).default([]),
+    unresolvedElementKeys: z.array(z.string().min(1)).default([]),
+    traversalRelationshipIds: z.array(z.string().min(1)).default([]),
+    status: z.enum(["IN_PROGRESS", "COMPLETE", "STALE_BASELINE"]),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .superRefine((assessment, ctx) => {
+    if (assessment.status !== "COMPLETE") return;
+
+    if (assessment.unresolvedElementKeys.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["unresolvedElementKeys"],
+        message: "A COMPLETE architecture impact assessment cannot have unresolved candidates.",
+      });
+    }
+
+    const assessed = new Set(assessment.assessedElementKeys);
+    const missing = assessment.candidateElementKeys.filter((key) => !assessed.has(key));
+    if (missing.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["assessedElementKeys"],
+        message: "A COMPLETE assessment must disposition every candidate element.",
+      });
+    }
+  });
+
 export const ArchitectureChangeType = z.enum([
   "ADD",
   "MODIFY",
@@ -328,8 +385,11 @@ export const RequirementProfileArchitecturePolicySchema = z
     profileVersion: z.number().int().positive(),
     requireArchitectureBaseline: z.boolean().default(false),
     requireConfirmedImpactForHighCritical: z.boolean().default(false),
+    requireCompleteImpactAssessmentForHighCritical: z.boolean().default(false),
     requireImplementationTargetForHighCritical: z.boolean().default(false),
     allowNeedsReviewElementsForImpact: z.boolean().default(false),
+    traversalPolicyId: z.string().optional(),
+    traversalPolicyVersion: z.number().int().positive().optional(),
     createdAt: z.string(),
   })
   .superRefine((policy, ctx) => {
@@ -339,6 +399,22 @@ export const RequirementProfileArchitecturePolicySchema = z
         path: ["requireArchitectureBaseline"],
         message: "Confirmed architecture impact requires an architecture baseline.",
       });
+    }
+    if (policy.requireCompleteImpactAssessmentForHighCritical) {
+      if (!policy.requireArchitectureBaseline) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["requireArchitectureBaseline"],
+          message: "Complete architecture impact assessment requires an architecture baseline.",
+        });
+      }
+      if (!policy.traversalPolicyId || !policy.traversalPolicyVersion) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["traversalPolicyId"],
+          message: "Complete architecture impact assessment requires a pinned traversal policy ID/version.",
+        });
+      }
     }
     if (
       policy.requireImplementationTargetForHighCritical &&
@@ -363,6 +439,8 @@ export type ArchitectureIngestionRun = z.infer<typeof ArchitectureIngestionRunSc
 export type ArchitectureBaseline = z.infer<typeof ArchitectureBaselineSchema>;
 export type DeliverySubjectArchitectureContext = z.infer<typeof DeliverySubjectArchitectureContextSchema>;
 export type RequirementArchitectureImpact = z.infer<typeof RequirementArchitectureImpactSchema>;
+export type ArchitectureTraversalPolicy = z.infer<typeof ArchitectureTraversalPolicySchema>;
+export type ArchitectureImpactAssessment = z.infer<typeof ArchitectureImpactAssessmentSchema>;
 export type ArchitectureChangeProposal = z.infer<typeof ArchitectureChangeProposalSchema>;
 export type WorkPackageImplementationTarget = z.infer<typeof WorkPackageImplementationTargetSchema>;
 export type RequirementProfileArchitecturePolicy = z.infer<typeof RequirementProfileArchitecturePolicySchema>;
