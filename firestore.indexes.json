@@ -99,6 +99,24 @@
       ]
     },
     {
+      "collectionGroup": "architectureImpactAssessments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "requirementId", "order": "ASCENDING" },
+        { "fieldPath": "requirementRevision", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "architectureImpactAssessments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "traversalPolicyId", "order": "ASCENDING" },
+        { "fieldPath": "traversalPolicyVersion", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "architectureChangeProposals",
       "queryScope": "COLLECTION",
       "fields": [
@@ -113,6 +131,14 @@
       "fields": [
         { "fieldPath": "workPackageId", "order": "ASCENDING" },
         { "fieldPath": "architectureElementKey", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "handoffPackages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "version", "order": "DESCENDING" }
       ]
     },
     {

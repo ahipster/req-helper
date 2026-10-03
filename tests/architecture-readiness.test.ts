@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { evaluateReadiness, type ReadinessSnapshot } from "../src/domain/readiness.js";
 import type {
   ArchitectureElement,
+  ArchitectureImpactAssessment,
   DeliverySubjectArchitectureContext,
   RequirementArchitectureImpact,
   RequirementProfileArchitecturePolicy,
@@ -54,9 +55,17 @@ const policy: RequirementProfileArchitecturePolicy = {
   profileVersion: 8,
   requireArchitectureBaseline: true,
   requireConfirmedImpactForHighCritical: true,
+  requireCompleteImpactAssessmentForHighCritical: false,
   requireImplementationTargetForHighCritical: false,
   allowNeedsReviewElementsForImpact: false,
   createdAt: now,
+};
+
+const coveragePolicy: RequirementProfileArchitecturePolicy = {
+  ...policy,
+  requireCompleteImpactAssessmentForHighCritical: true,
+  traversalPolicyId: "api-impact",
+  traversalPolicyVersion: 2,
 };
 
 const context: DeliverySubjectArchitectureContext = {
@@ -115,6 +124,31 @@ const impactFor = (
   status: "CONFIRMED",
   confirmedBy: confirmer,
   confirmedPerspectiveId: perspectiveId,
+  createdAt: now,
+  updatedAt: now,
+});
+
+const assessmentFor = (
+  requirementId: string,
+  revision: number,
+  candidates: string[],
+  assessed = candidates,
+  unresolved: string[] = [],
+): ArchitectureImpactAssessment => ({
+  id: `assessment-${requirementId}`,
+  deliverySubjectId: deliverySubject.id,
+  requirementId,
+  requirementRevision: revision,
+  architectureBaselineId: "ab-9",
+  architectureBaselineVersion: 9,
+  traversalPolicyId: "api-impact",
+  traversalPolicyVersion: 2,
+  seedElementKeys: ["cap.customer-verification"],
+  candidateElementKeys: candidates,
+  assessedElementKeys: assessed,
+  unresolvedElementKeys: unresolved,
+  traversalRelationshipIds: [],
+  status: unresolved.length === 0 && candidates.every((key) => assessed.includes(key)) ? "COMPLETE" : "IN_PROGRESS",
   createdAt: now,
   updatedAt: now,
 });
@@ -190,5 +224,74 @@ describe("architecture-aware readiness", () => {
     expect(
       result.checks.find((check) => check.code === "ARCHITECTURE_IMPACTS_USE_TRUSTED_TOPOLOGY")?.passed,
     ).toBe(false);
+  });
+
+  it("blocks when one impact exists but the configured topology coverage was not completed", () => {
+    const requirement = requirements[0]!;
+    const result = evaluateReadiness({
+      ...baseSnapshot(),
+      requirements: [requirement],
+      requirementChangeProposals: requirementChangeProposals.filter(
+        (proposal) => proposal.proposedRequirementId === requirement.id,
+      ),
+      requirementSources: requirementSources.filter((source) => source.requirementId === requirement.id),
+      verifications: verifications.filter((verification) => verification.targetId === requirement.id),
+      workPackages: workPackages.map((workPackage) => ({
+        ...workPackage,
+        requirementIds: workPackage.requirementIds.filter((id) => id === requirement.id),
+      })),
+      acceptanceCriteria: acceptanceCriteria.filter((criterion) => criterion.targetId === requirement.id),
+      evaluations: evaluations.filter((evaluation) => evaluation.targetId === requirement.id),
+      architecturePolicy: coveragePolicy,
+      architectureContext: context,
+      architectureElements: [confirmedElement("app.api")],
+      architectureImpacts: [impactFor(requirement.id, requirement.revision, "app.api")],
+      architectureImpactAssessments: [
+        assessmentFor(
+          requirement.id,
+          requirement.revision,
+          ["app.api", "app.onboarding"],
+          ["app.api"],
+          ["app.onboarding"],
+        ),
+      ],
+    });
+
+    expect(
+      result.checks.find(
+        (check) => check.code === "CRITICAL_REQUIREMENTS_HAVE_COMPLETE_ARCHITECTURE_ASSESSMENT",
+      )?.passed,
+    ).toBe(false);
+  });
+
+  it("accepts coverage only when every candidate is assessed under the pinned traversal policy", () => {
+    const requirement = requirements[0]!;
+    const candidates = ["app.api", "app.onboarding"];
+    const result = evaluateReadiness({
+      ...baseSnapshot(),
+      requirements: [requirement],
+      requirementChangeProposals: requirementChangeProposals.filter(
+        (proposal) => proposal.proposedRequirementId === requirement.id,
+      ),
+      requirementSources: requirementSources.filter((source) => source.requirementId === requirement.id),
+      verifications: verifications.filter((verification) => verification.targetId === requirement.id),
+      workPackages: workPackages.map((workPackage) => ({
+        ...workPackage,
+        requirementIds: workPackage.requirementIds.filter((id) => id === requirement.id),
+      })),
+      acceptanceCriteria: acceptanceCriteria.filter((criterion) => criterion.targetId === requirement.id),
+      evaluations: evaluations.filter((evaluation) => evaluation.targetId === requirement.id),
+      architecturePolicy: coveragePolicy,
+      architectureContext: context,
+      architectureElements: candidates.map((stableKey) => confirmedElement(stableKey)),
+      architectureImpacts: [impactFor(requirement.id, requirement.revision, "app.api")],
+      architectureImpactAssessments: [assessmentFor(requirement.id, requirement.revision, candidates)],
+    });
+
+    expect(
+      result.checks.find(
+        (check) => check.code === "CRITICAL_REQUIREMENTS_HAVE_COMPLETE_ARCHITECTURE_ASSESSMENT",
+      )?.passed,
+    ).toBe(true);
   });
 });
