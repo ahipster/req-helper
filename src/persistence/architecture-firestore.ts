@@ -1,6 +1,13 @@
+import { applicationDefault, getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 
-export const architectureFirestore = getFirestore();
+const app =
+  getApps()[0] ??
+  initializeApp({
+    credential: applicationDefault(),
+  });
+
+export const architectureFirestore = getFirestore(app);
 
 export const architectureSourcesCollection = (db: Firestore = architectureFirestore) =>
   db.collection("architectureSources");
