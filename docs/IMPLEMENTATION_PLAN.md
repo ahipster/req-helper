@@ -2,337 +2,272 @@
 
 ## Goal
 
-Deliver one complete collaborative vertical slice that can be exercised aggressively during the following war-room week.
-
-The priority is learning whether the requirements-orchestration model works in practice, not platform completeness.
+Deliver one coherent multi-user vertical slice that can survive aggressive war-room testing without ambiguity in authority, state, provenance or session recovery.
 
 ## P0 definition
 
 By end of week, one seeded signal must support:
 
-1. create a Delivery Subject;
-2. configure PoC users/global roles/perspective templates through Admin UI;
-3. clarify outcome/problem;
-4. identify/confirm perspectives;
-5. assign multiple humans with explicit OWNER/DELEGATE/CONTRIBUTOR/REVIEWER relationships;
-6. open independent participant drill threads;
-7. persist answers and user-visible thread history in Firestore;
-8. use OpenCode to extract contributions and synthesize requirements;
-9. refresh OpenCode context from Firestore whenever shared domain state advances;
-10. recreate lost OpenCode sessions without losing product state;
-11. detect gaps/conflicts/assumptions;
-12. route follow-up/verification tasks;
-13. show realtime changes to other logged-in users;
-14. link enterprise knowledge and proposed diffs;
-15. split requirements into work packages;
-16. generate acceptance criteria and eval definitions;
-17. compute deterministic readiness;
-18. export final JSON/Markdown package;
-19. expose agent/domain traces in a war-room view.
+1. create Delivery Subject from natural language + source links/uploads;
+2. clarify problem/outcome/scope/constraints/success measures;
+3. manage subject membership/access;
+4. identify/confirm required perspectives;
+5. assign OWNER/DELEGATE/CONTRIBUTOR/REVIEWER;
+6. run independent participant chat/drill threads;
+7. persist human answers before AI processing;
+8. extract Contributions/Evidence;
+9. create Requirement + RequirementRevision + RequirementSource;
+10. create revision-bound Verification;
+11. detect/manage gaps, assumptions and N-party conflicts;
+12. asynchronously gather conflict positions and record human Decision;
+13. link KnowledgeReferences and ProposedDiffs;
+14. split into targeted WorkPackages;
+15. define requirement/package/subject acceptance criteria and evals;
+16. compute deterministic readiness;
+17. show realtime changes to other authorized users;
+18. recover from OpenCode session loss/staleness;
+19. expose normal-user requirement history;
+20. expose JSON/Markdown export and read-only package APIs;
+21. expose war-room run/context diagnostics.
 
-## Day 1 — GCP/domain spine + configuration
+## Day 1 — Canonical domain + Firestore spine
 
 ### Deliverables
-- Next.js/TypeScript project bootstrap;
-- Firebase Admin + browser Firestore configuration;
-- Firestore emulator/local configuration where feasible;
-- core Zod/domain schemas;
-- `UserProfile`, `RoleTemplate`, `PerspectiveTemplate` schemas;
+
+- Next.js/TypeScript bootstrap;
+- Firebase Admin/browser config + emulator;
+- canonical Zod schemas from `src/domain/schemas.ts`;
 - Firestore repository layer;
-- Delivery Subject API;
-- Perspective, Assignment, Task and Requirement models;
-- append-only Event collection;
-- readiness evaluator skeleton;
-- seed loader;
-- minimal `/admin` route and configuration APIs.
+- DeliverySubject CRUD with `revision`;
+- SourceArtifact metadata/GCS-or-link abstraction;
+- Membership, Perspective, Assignment, Task;
+- Requirement, RequirementRevision, RequirementSource;
+- Evidence, Verification;
+- Event collection;
+- readiness evaluator/tests;
+- seed loader.
 
 ### Acceptance
-- create/read Delivery Subject;
-- original signal preserved;
-- admin can create/edit/deactivate PoC user profiles without raw Firestore editing;
-- global roles remain separate from Delivery Subject assignment relationships;
-- add perspectives/assignments;
-- create requirement with provenance;
-- every important mutation writes audit event;
-- domain tests run.
 
-## Day 2 — Admin/assignment UX + realtime multi-user UX
+- `initialSignal` immutable;
+- scope fields persist;
+- subject access and perspective authority are distinct;
+- all material mutations increment subject revision and append event;
+- manual requirement edit creates revision and invalidates old-revision readiness verification;
+- tests compile/pass.
+
+## Day 2 — Multi-user UX + admin
 
 ### Deliverables
-- Admin overview;
-- Users/User Detail;
-- Role Templates;
-- Perspective Catalogue;
-- Delivery Subject Assignment screen;
-- app shell/navigation;
+
 - My Work;
-- New Signal;
+- New Signal + Clarify Scope;
 - Delivery Overview;
+- member/assignment management;
+- Admin Users/Roles/Perspective templates;
 - 3-pane Drill Workspace;
-- Requirements view;
-- assistant-ui conversation surface;
-- identity/persona mechanism;
-- Firestore listeners for subject summary, tasks, requirements and blockers.
+- Requirements + History drawer;
+- Firestore listeners scoped to authorized data.
 
 ### Acceptance
-- Delivery Lead can assign OWNER/DELEGATE/CONTRIBUTOR/REVIEWER explicitly;
-- expertise hints can suggest people but never establish authority automatically;
-- required perspective with only CONTRIBUTOR/REVIEWER remains unowned;
-- two browser sessions/users can view the same Delivery Subject;
-- each sees only relevant work by default;
-- update by one participant appears live in the other view;
-- structured Delivery Subject state is visible outside chat;
-- client cannot directly bypass protected domain mutation rules.
 
-## Day 3 — OpenCode harness + state synchronization
+- two users on same subject receive live structured updates;
+- a non-member cannot read subject data;
+- a WAR_ROOM_OPERATOR without Delivery Lead/Admin rights cannot change assignments;
+- reviewer UI is visibly advisory;
+- remote update does not erase unsent chat draft;
+- stale edit warning appears when current object revision changed.
+
+## Day 3 — OpenCode harness + task lifecycle
 
 ### Deliverables
-- AgentHarness interface;
-- OpenCode adapter using `@opencode-ai/sdk`;
-- AgentThread persistence;
-- thread key: deliverySubject + perspective + participant;
-- `opencodeSessionId`, `sessionGeneration`, `lastContextRevision`;
-- one-active-run-per-thread lease;
-- Vertex provider configuration;
-- structured output validation;
-- agentRun trace persistence;
-- ContextEnvelope builder from Firestore;
-- session existence check/recreation;
-- full hydration on new/recreated session;
-- context refresh whenever Delivery Subject revision differs from thread `lastContextRevision`;
-- user-visible message persistence independent of OpenCode local state.
+
+- AgentHarness/OpenCode adapter;
+- one logical AgentThread per subject + perspective + participant;
+- session generation + lease;
+- `contextRevisionPresented` semantics;
+- Vertex provider config;
+- ContextEnvelope builder;
+- user-visible message persistence;
+- task state machine:
+  `OPEN -> IN_PROGRESS -> ANSWERED -> PROCESSING -> COMPLETED`;
+- AgentRun traces.
 
 ### Acceptance
-- independent users can run separate OpenCode threads concurrently;
-- same thread rejects/queues concurrent prompt attempts;
-- lost OpenCode session can be recreated;
-- UI thread history still renders after OpenCode session deletion;
-- recreated session receives enough Firestore context to continue;
-- another user's domain change is supplied to an old thread on its next run;
-- one human answer can create multiple validated contributions;
-- invalid AI output cannot mutate authoritative state;
-- no local OpenCode database replication is required.
 
-Read `docs/OPENCODE_STATE_SYNC.md` as the implementation contract.
+- human answer is durable before model call;
+- model failure leaves retriable human work;
+- lost session recreates and FULL hydrates;
+- same thread cannot run twice concurrently;
+- independent threads can run concurrently;
+- same-run `domainRevisionAtEnd` is not falsely written as context presented.
 
-## Day 4 — Convergence loops
+## Day 4 — Convergence, provenance and conflict mechanics
 
 ### Deliverables
-- contribution verification flow;
-- requirement synthesis/revision commands;
-- idempotency keys for AI commands;
-- expected domain/object revisions on mutation proposals;
-- gaps, assumptions, conflicts and decisions;
-- targeted follow-up routing;
-- Bigger Picture view;
-- "I don't know" and "ask someone" actions;
-- rerun/idempotency handling.
+
+- Contribution/Evidence extraction;
+- requirement synthesis/revision service;
+- provenance service (`RequirementSource`);
+- revision-bound Verification flow;
+- gap/assumption flow;
+- N-party Conflict positions;
+- async conflict workspace/tasks;
+- Decision recording;
+- rerun/idempotency/stale-command handling.
 
 ### Acceptance
-- non-owner knowledge is preserved but unverified;
-- owner can verify/reject/amend;
-- contradiction creates explicit Conflict;
-- decision requires human owner;
-- reruns do not duplicate requirements blindly;
-- stale AI commands are rejected or retried when domain revision changed;
-- semantic collision from parallel threads cannot silently last-write-wins.
 
-## Day 5 — Enterprise context + package split
+- non-owner contribution retained but not authoritative;
+- OWNER/DELEGATE can verify current revision;
+- Reviewer cannot satisfy authoritative verification;
+- requirement change makes old verification ineligible;
+- 3-party conflict represented without pairwise hacks;
+- duplicate rerun cannot duplicate domain mutation;
+- stale command rejected/recomputed.
+
+## Day 5 — Enterprise context + downstream work split
 
 ### Deliverables
-- KnowledgeProvider contract;
-- SeedKnowledgeProvider;
-- optional one real adapter;
-- knowledge link UI;
-- proposed diffs;
+
+- KnowledgeProvider + seed adapter + optional real adapter;
+- KnowledgeReference UI;
+- ProposedDiff lifecycle/verification;
 - impact analysis;
-- work-package split;
-- dependencies.
+- WorkPackage target area/team/coordinator;
+- dependencies;
+- conflict/impact links.
 
 ### Acceptance
-- linked references keep source metadata;
-- AI impacts never overwrite source systems;
-- requirements can span multiple areas;
-- dependencies remain visible.
 
-## Day 6 — Acceptance, evals, readiness, exports
+- source metadata/version preserved;
+- large source documents not stored directly in Firestore;
+- ProposedDiff never writes back to source system;
+- each populated work package has targetAreaRef;
+- unresolved `blocking=true` dependency blocks READY even when owned.
+
+## Day 6 — Acceptance, evals, readiness, handoff
 
 ### Deliverables
-- acceptance criteria generation;
-- eval definition generation;
+
+- generalized AcceptanceCriterion target type;
+- generalized Evaluation target type;
 - deterministic readiness complete;
 - Readiness screen;
-- work-package detail;
 - Final Package;
-- JSON + Markdown export.
+- JSON + Markdown export;
+- read-only package/work-package APIs;
+- reverse traceability.
 
 ### Acceptance
-- blocking conflict/gap prevents READY;
-- missing required perspective owner prevents READY;
-- expertise hint/global role alone cannot satisfy ownership readiness;
-- critical requirement without AC blocks READY;
-- export is constructed from Firestore domain state, not a final free-form prompt;
-- reverse traceability works.
 
-## Day 7 — GCP + war-room + recovery hardening
+- all required perspectives must be confirmed and owned;
+- current-revision verification/provenance enforced;
+- blocking gaps/conflicts/assumptions/dependencies/tasks block READY;
+- package acceptance can span multiple requirements;
+- package API is generated from persisted state, not one final free-form prompt.
+
+## Day 7 — GCP + war-room hardening
 
 ### Deliverables
-- Cloud Run container/config;
-- Firestore rules/indexes reviewed;
-- workload identity / ADC config for Vertex/OpenCode;
+
+- Cloud Run config;
+- Firestore rules/index review;
+- workload identity/ADC for OpenCode→Vertex;
+- GCS/source-artifact config if uploads used;
 - War Room screen;
-- run/event diagnostics;
-- hydration/session-generation diagnostics;
-- realistic seed personas;
-- E2E smoke scenario;
-- metrics instrumentation;
-- documented known limitations;
-- OpenCode restart/session-loss recovery test.
+- run/context/session diagnostics;
+- realistic seeded personas and 3-party conflict;
+- E2E smoke/recovery tests;
+- known limitations.
 
 ### Acceptance
-- operator distinguishes waiting-human vs harness/model/domain failure;
-- OpenCode restart/session loss is recoverable;
-- user-visible conversation remains available after OpenCode local state loss;
-- stale context is detectable from run metadata;
-- two or more simultaneous users complete independent drills;
-- seeded scenario completes end-to-end;
-- deployment has no dependency on local PostgreSQL/LangGraph state.
+
+- war-room operator can distinguish MODEL/PROMPT/CONTEXT/KNOWLEDGE/WORKFLOW/DOMAIN_MODEL/UX/OWNERSHIP/CONCURRENCY;
+- OpenCode restart/session deletion recovers;
+- another user's state change refreshes stale session context;
+- two+ simultaneous users complete independent drills;
+- seed scenario reaches package generation after blockers are resolved.
+
+## Canonical rules coding agents must not reinterpret
+
+1. Firestore is system of record.
+2. `contextRevisionPresented` means what OpenCode actually saw, not latest domain state.
+3. Membership controls subject access; assignment controls perspective authority.
+4. Reviewer is advisory.
+5. Requiredness belongs to Perspective, not Assignment.
+6. Task enum/state machine is exactly the canonical schema.
+7. Conflict is N-party.
+8. Requirement provenance is first-class RequirementSource.
+9. Verification is immutable/current-revision specific.
+10. Human and AI requirement edits use the same revision service.
+11. `blocking=true` dependency must be resolved before READY.
+12. WorkPackage target implementation area is separate from human coordinator.
+13. Acceptance/evals can target Requirement, WorkPackage or DeliverySubject.
+14. `priority` is urgency; `criticality` is consequence-if-wrong.
+15. large source files live outside Firestore.
 
 ## Firestore-specific rules
 
-1. Do not put growing arrays of requirements/messages/events on the Delivery Subject document.
-2. Use subcollections for growing data.
-3. Use transactions for read-modify-write invariants.
-4. Use deterministic IDs/idempotency keys for AI proposals where practical.
-5. Add composite indexes only for real queries used by the UI.
-6. Avoid broad realtime subscriptions; subscribe to relevant slices.
-7. Keep large source documents outside Firestore and store reference/summary metadata.
-8. Keep a `revision` field on the Delivery Subject and/or affected records for stale-command detection.
-9. Store human text and AI outputs separately from authoritative normalized records when needed for audit.
-10. Security Rules protect browser access; server-side commands remain authoritative.
-11. Keep global configuration in `users`, `roleTemplates`, and `perspectiveTemplates` root collections.
-12. Delivery Subject authority is always represented by explicit assignments, not inferred from templates.
+- small aggregate root document;
+- growing/history/relations in subcollections;
+- transactions for invariant-sensitive writes;
+- deterministic IDs/idempotency keys for AI mutations;
+- narrow realtime subscriptions;
+- membership-aware security rules;
+- append-only events for meaningful mutations.
 
 ## OpenCode-specific rules
 
-1. OpenCode is an executor, not system of record.
-2. One active run per AgentThread.
-3. Session IDs are recoverable metadata.
-4. Persist `sessionGeneration` and `lastContextRevision`.
-5. Context is reconstructed/refreshed from Firestore on every meaningful run.
-6. On session loss, recreate and full hydrate.
-7. Conversation history needed by users is stored in Firestore.
-8. Do not copy/synchronize OpenCode local disk/database wholesale to Firestore.
-9. Tools exposed to OpenCode are allowlisted.
-10. Structured output is schema-validated before application commands.
-11. Store run metadata for replay/debugging, not hidden chain-of-thought.
-12. Commands carry idempotency key and revision expectations when they mutate shared state.
-
-See `docs/OPENCODE_STATE_SYNC.md`.
-
-## Deliberate shortcuts
-
-### Knowledge
-Use 20–100 representative artifacts.
-
-### Identity/admin
-Use enterprise SSO only if trivial; otherwise Firebase/Identity Platform or named personas for the PoC. Build the small Req Helper Admin UI regardless so roles/templates/assignments are visible and editable without raw database changes.
-
-Do not implement SCIM, HR synchronization, nested groups or enterprise IAM policy language in P0.
-
-### Notifications
-In-app task inbox only.
-
-### Search
-Start with deterministic/Firestore queries and source adapters. Add semantic retrieval only when a concrete failure proves need.
-
-### Orchestration
-No LangGraph. Persist tasks/state and use ordinary application control flow around OpenCode.
-
-### Infrastructure
-Cloud Run + Firestore + OpenCode + Vertex AI. Avoid additional infrastructure unless required.
-
-### Diffs
-Structured data + readable rendering. No authoritative reconciliation/write-back yet.
+- executor, not system of record;
+- one active run per AgentThread;
+- session ID recoverable metadata;
+- full bounded hydration whenever shared revision changed in P0;
+- allowlisted tools only;
+- schema-validated output before commands;
+- no hidden chain-of-thought persistence.
 
 ## P0 backlog
 
+- [ ] canonical schemas/state machines
 - [ ] Firestore config/emulator
-- [ ] DeliverySubject CRUD
-- [ ] UserProfile + global roles
-- [ ] RoleTemplate CRUD
-- [ ] PerspectiveTemplate CRUD
-- [ ] Admin overview/users/roles/perspectives UI
+- [ ] DeliverySubject + scope/revision
+- [ ] SourceArtifact/GCS-or-link
+- [ ] Membership/access
 - [ ] Perspective + assignment
-- [ ] Delivery Subject assignment UI
-- [ ] Task inbox
-- [ ] realtime subscriptions
+- [ ] Admin UI
+- [ ] Task inbox/state machine
+- [ ] realtime subscriptions/security rules
 - [ ] Drill Workspace
 - [ ] assistant-ui integration
-- [ ] AgentHarness
-- [ ] OpenCode adapter
-- [ ] Vertex provider config
-- [ ] AgentThread/session mapping
-- [ ] `sessionGeneration`
-- [ ] `lastContextRevision`
-- [ ] thread lease/concurrency guard
-- [ ] ContextEnvelope builder
-- [ ] full hydration/session recreation
-- [ ] stale-context refresh
-- [ ] Firestore user-visible message history
-- [ ] contribution extraction
-- [ ] contribution verification
-- [ ] requirement synthesis/revisions
-- [ ] AI command idempotency/revision guard
-- [ ] provenance
-- [ ] gaps/assumptions/conflicts/decisions
-- [ ] knowledge adapter + seed provider
-- [ ] proposed diffs
-- [ ] work packages/dependencies
-- [ ] acceptance criteria
-- [ ] eval definitions
+- [ ] AgentHarness/OpenCode/Vertex
+- [ ] AgentThread/session generation/lease
+- [ ] contextRevisionPresented
+- [ ] Contribution/Evidence
+- [ ] RequirementRevision/RequirementSource
+- [ ] Verification
+- [ ] gaps/assumptions
+- [ ] N-party conflicts/decisions
+- [ ] KnowledgeProvider/ProposedDiff
+- [ ] WorkPackages/target area/dependencies
+- [ ] generalized acceptance/evals
 - [ ] deterministic readiness
-- [ ] package export
-- [ ] agent/domain event traces
-- [ ] hydration/session diagnostics in war-room view
-- [ ] demo seed
-- [ ] Firestore rules/indexes
+- [ ] requirement history
+- [ ] package export/read APIs
+- [ ] war-room traces
+- [ ] recovery/idempotency/concurrency tests
 - [ ] Cloud Run deployment
-- [ ] OpenCode-loss recovery E2E test
-- [ ] core tests
-
-## Required sync/concurrency tests
-
-- [ ] OpenCode session deletion does not lose domain state
-- [ ] user-visible conversation history survives OpenCode restart
-- [ ] recreated session can continue from full Firestore hydration
-- [ ] external user change reaches old thread on next run
-- [ ] duplicate retry does not duplicate requirement mutation
-- [ ] stale mutation is rejected/recomputed
-- [ ] two independent threads execute concurrently
-- [ ] same-thread parallel execution is blocked by lease
-- [ ] expertise hint does not grant authoritative verification
 
 ## P1 only after vertical slice
 
+- true delta context hydration;
 - semantic retrieval/embeddings;
-- true context-delta hydration optimization;
-- real MCP enterprise adapter;
-- richer diff UI;
-- notifications;
-- reusable prompt/eval dataset;
-- drill quality analytics;
-- package approval workflow;
-- presence indicators.
-
-## Future
-
-- authoritative reconciliation into enterprise repositories;
-- downstream SDLC MCP/API automation;
-- production enterprise SSO/RBAC/SCIM;
-- alternative durable workflow engine only if a concrete scaling/governance need appears;
-- relational/event warehouse projection if analytics or cross-subject joins outgrow Firestore.
+- notifications/escalation;
+- real enterprise directory sync;
+- richer diff visualizations;
+- approval workflow;
+- analytics warehouse projection.
 
 ## Coding-agent instruction
 
-Every day must end with a runnable vertical path. If an external dependency is unavailable, keep the domain contract and use a seed/mock adapter rather than blocking the entire slice.
+Every day ends with a runnable vertical path. When docs and code disagree, `src/domain/schemas.ts` + `docs/DOMAIN_MODEL.md` are canonical; fix the conflicting artifact rather than inventing a third interpretation.
