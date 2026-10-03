@@ -14,158 +14,162 @@ Delivery Subject DS-123
   └─ Delivery Lead        -> overview/readiness subscriptions
 ```
 
-All threads converge through Firestore domain records.
+All threads converge through Firestore domain records. Published requirement/architecture baselines are shared read-only reference state; subject requirements/impacts are collaborative proposed state.
 
 ## Access model
 
-Realtime subject data is not globally visible to every authenticated user.
-
-A user can read subject data when:
-
-- they have active DeliverySubjectMembership, or
-- they are ADMIN under PoC policy.
+A user can read subject data when they have active DeliverySubjectMembership or are ADMIN under PoC policy.
 
 Membership answers access; PerspectiveAssignment answers authority. Global DELIVERY_LEAD capability does not grant access to all subjects.
 
+Published ArchitectureBaseline data is signed-in reference data in the PoC. Architecture ingestion run administration is separate from subject collaboration.
+
 ## My Work across subjects
 
-Do not use a browser collection-group query across authoritative `tasks` collections. Firestore rules are not post-query filters, so a cross-subject query is awkward to reconcile safely with per-subject membership.
-
-Instead the backend maintains:
+Backend maintains:
 
 ```text
 users/{uid}/taskInbox/{itemId}
 ```
 
-This is a non-authoritative projection containing only My Work display/routing metadata.
-
-Lifecycle rules:
-
-- Task create/assignment/status change updates the projection;
-- reassignment removes the old assignee item and writes the new one;
-- subject membership removal/deactivation deletes that subject's projected items for the user;
-- browser can read only its own projection;
-- opening an item reloads/re-authorizes authoritative subject/task state;
-- projection may be rebuilt from authoritative tasks.
+This is a non-authoritative projection. Task create/reassignment/status updates the projection; access removal cleans it up; opening an item reloads/re-authorizes authoritative task/subject state.
 
 ## What authorized users share
 
 Depending on role/screen:
 
 - Delivery Subject summary/scope/status;
-- perspectives and authority coverage;
+- pinned Requirement Profile and architecture policy;
+- pinned ArchitectureBaseline identity/version/fingerprint;
 - relevant requirements/revisions/provenance/verifications;
-- tasks;
-- gaps/assumptions/conflicts/decisions;
-- enterprise impacts;
-- work packages/dependencies;
-- readiness;
+- RequirementArchitectureImpacts and ArchitectureChangeProposals;
+- work-package implementation targets;
+- tasks/gaps/assumptions/conflicts/decisions;
+- knowledge impacts/work packages/dependencies/readiness;
 - recent domain activity.
 
 They do not share one chat transcript by default.
 
 ## Thread isolation
 
-Each interaction thread has its own participant, perspective context, current task, user-visible conversation history, OpenCode session ID/generation, Firestore run lease and `contextRevisionPresented`.
+Each interaction thread has its own participant/perspective/task, user-visible messages, OpenCode session ID/generation, run lease and `contextRevisionPresented`.
+
+Architecture ingestion is not a participant AgentThread. It has separate ArchitectureIngestionRun state.
 
 ## Realtime behavior
 
+Example:
+
 ```text
 Alice answers Architecture task
- -> human answer persists; Task ANSWERED
- -> Task PROCESSING + taskInbox projection updated
- -> OpenCode proposes Requirement revision
- -> validated Firestore transaction commits revision/source/event
- -> Bob's listener receives R-17 rev 4
- -> Alice's My Work projection reflects new Task state
- -> Bob's unsent chat draft remains untouched
- -> if Business is affected, Bob receives a new authoritative Task + inbox item
+ -> answer durable; Task ANSWERED
+ -> PROCESSING
+ -> OpenCode proposes RequirementArchitectureImpact:
+      R-17 rev3 -> app.customer-api MODIFY
+ -> backend persists PROPOSED impact
+ -> Alice confirms after seeing topology/source evidence
+ -> impact becomes CONFIRMED
+ -> Delivery Lead/other authorized listeners see updated impact live
+ -> WorkPackage can now link implementation target
+ -> unsent drafts in other users' sessions remain untouched
 ```
 
-A remote state update updates structured context without silently replacing local unsent input.
+Remote state updates structured context without silently replacing local unsent input.
+
+## Architecture baseline changes while users work
+
+A published normalized baseline is immutable, but a newer baseline may become current globally while a subject is active.
+
+```text
+DS-123 pins AB-9 v9
+Architecture admin publishes AB-10 v10
+ -> subject context remains explicitly pinned to AB-9
+ -> application marks/reports STALE_BASELINE where current-policy rules require refresh
+ -> existing impacts remain auditable but no longer satisfy readiness until reassessed
+ -> users see stale warning rather than silent topology replacement
+```
+
+Do not silently replace the topology underneath an open impact-review form.
+
+If a user is reviewing impact against AB-9 and the subject is rebased to AB-10, backend rejects the stale confirmation and UI offers refresh/review against current pinned baseline.
 
 ## Concurrency rules
 
 ### Different AgentThreads
-
 May execute concurrently.
 
 ### Same AgentThread
+One active run; Firestore lease serializes prompts.
 
-One active harness run. Firestore lease serializes prompts.
+### Same requirement/impact/change object
+Concurrent proposals may exist, but commands include target revision/baseline/idempotency constraints. Before commit, re-read authoritative state and reject/recompute stale operations.
 
-### Same domain object
+### Architecture baseline publication
+Architecture admin workflows must use version/current-pointer compare-and-set so concurrent ingestion runs cannot both silently become current.
 
-Concurrent proposals may exist, but every semantic command includes revision/idempotency constraints.
-
-Before commit:
-
-1. re-read authoritative state;
-2. compare target/domain revision;
-3. reject/recompute stale proposals;
-4. if competing human positions are incompatible, preserve them and create/reopen Conflict.
-
-Important requirements/decisions never use blind last-write-wins.
-
-## Task concurrency and user feedback
+## Task states and feedback
 
 ```text
 OPEN -> IN_PROGRESS -> ANSWERED -> PROCESSING -> COMPLETED
                      \-> WAITING_ON_OTHER -> IN_PROGRESS
 ```
 
-The UI distinguishes answer saved, agent processing, waiting for another participant and completed. AgentRun status remains separate.
+UI distinguishes answer saved, agent processing, waiting and completed. AgentRun status remains separate.
 
-## Requirement edits while another user is viewing/editing
+## Requirement edits while architecture impacts exist
 
-If a structured object changes remotely while another user has an edit form open:
+If requirement semantics/capability links change:
 
-- do not silently overwrite;
-- show current remote revision vs user's base revision;
-- allow refresh/reapply/cancel;
-- backend rejects stale semantic writes unless explicitly reconciled.
+1. save a new RequirementRevision;
+2. preserve prior architecture impacts for audit;
+3. impacts tied to old requirement revision no longer satisfy readiness;
+4. create targeted architecture-impact reassessment where policy requires;
+5. show updated impacts live to other members.
 
-Normal users can inspect Requirement History to understand changes.
+Do not silently carry old impact confirmation to a new semantic requirement revision.
+
+## Architecture impact collaboration
+
+AI-proposed impact is collaborative proposal state, not authoritative routing.
+
+1. model proposes impact against exact requirement revision + architecture baseline;
+2. impact view shows traversal and Git source evidence;
+3. appropriate OWNER/DELEGATE/system/architecture reviewer confirms/rejects/corrects;
+4. confirmation is stored with actor;
+5. work-package target is created only from confirmed impact where profile requires it.
+
+`VERIFY_ONLY` remains distinct from a code-change target.
+
+A repository/team is shown as confirmed routing only when normalized topology supports that link.
 
 ## N-party conflict collaboration
 
-When users provide incompatible positions:
+Incompatible positions are preserved, represented by Conflict with 2+ positions and participant-specific tasks. Conflict may include architecture impact/topology interpretations in addition to requirement/knowledge positions.
 
-1. preserve each Contribution/Evidence;
-2. persist Conflict with 2+ structured positions;
-3. create participant-specific tasks;
-4. participants answer in independent AgentThreads;
-5. Conflict Workspace aggregates positions/evidence live;
-6. AI may neutrally summarize/options-frame;
-7. named human decision owner records Decision or source correction;
-8. affected requirements are reassessed.
-
-The Conflict Workspace is a shared view, not a shared OpenCode session.
+Shared Conflict Workspace is a view, not a shared OpenCode session.
 
 ## Authority during collaboration
 
-- OWNER/DELEGATE may authoritatively verify their assigned perspective.
-- CONTRIBUTOR input is useful but non-authoritative until verified.
-- REVIEWER may comment/challenge/recommend only.
-- WAR_ROOM_OPERATOR may diagnose/rerun but cannot alter assignments unless also ADMIN or subject Delivery Lead.
+- OWNER/DELEGATE may authoritatively verify assigned perspective.
+- Architecture/System OWNER/DELEGATE can confirm relevant subject impact according to application authorization.
+- CONTRIBUTOR input is non-authoritative until verified/confirmed.
+- REVIEWER is advisory.
+- ADMIN architecture baseline publishing does not automatically make that admin the subject Architecture OWNER.
+- WAR_ROOM_OPERATOR diagnoses/reruns but does not gain assignment/publishing authority automatically.
 
-## Presence
+## Presence / notifications
 
-Optional P1 only. Presence is ephemeral UX metadata and never affects ownership/readiness.
+Presence is optional P1 and non-authoritative.
 
-## Notifications
-
-P0: private in-app taskInbox projection and live badges/counts.
-
-Future: email/Teams/Slack reminders/escalation.
+P0 notifications are taskInbox + live badges/counts. Future email/Teams/Slack remains out of scope.
 
 ## Reconnect/offline behavior
 
 At minimum:
 
-- reconnect Firestore listeners after transient network loss;
-- show stale/offline indicator where needed;
-- do not claim a mutation succeeded until backend confirms authoritative commit;
-- preserve local draft text during reconnect;
-- re-read current object revision before submitting a structured edit after reconnect;
+- reconnect Firestore listeners;
+- show stale/offline indicators;
+- do not claim mutation succeeded until backend commit confirms;
+- preserve local draft text;
+- re-read current object revision and requirement/architecture baseline before structured submit;
 - treat taskInbox as disposable/read-only and reload authoritative state on navigation.
