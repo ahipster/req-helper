@@ -5,34 +5,49 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // PoC baseline: browsers may subscribe/read authenticated collaboration
-    // state, but authoritative domain mutations go through the Cloud Run API
-    // using the Firebase Admin SDK. Admin SDK requests bypass these rules.
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.systemRoles.hasAny(['ADMIN']);
+    }
+
+    function isSubjectMember(subjectId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/deliverySubjects/$(subjectId)/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/deliverySubjects/$(subjectId)/members/$(request.auth.uid)).data.active == true;
+    }
+
+    // Browsers read only subjects they belong to (or admins). Authoritative
+    // writes go through Cloud Run application services using Admin SDK.
     match /deliverySubjects/{subjectId} {
-      allow read: if signedIn();
+      allow read: if isAdmin() || isSubjectMember(subjectId);
       allow write: if false;
 
+      match /members/{memberId} {
+        allow read: if isAdmin() || isSubjectMember(subjectId);
+        allow write: if false;
+      }
+
+      // Task rule is explicit so collection-group My Work queries are still
+      // evaluated against Delivery Subject membership.
+      match /tasks/{taskId} {
+        allow read: if isAdmin() || isSubjectMember(subjectId);
+        allow write: if false;
+      }
+
       match /{subcollection}/{documentId} {
-        allow read: if signedIn();
+        allow read: if isAdmin() || isSubjectMember(subjectId);
         allow write: if false;
       }
     }
 
-    // My Work uses a collection-group query over task subcollections across
-    // Delivery Subjects. Keep browser access read-only.
-    match /{path=**}/tasks/{taskId} {
-      allow read: if signedIn();
-      allow write: if false;
-    }
-
+    // PoC profiles are readable to signed-in users so names/expertise can be
+    // shown in assignment pickers. Profile mutation remains backend-only.
     match /users/{userId} {
       allow read: if signedIn();
       allow write: if false;
     }
 
-    // Admin/configuration collections are readable to authenticated PoC users
-    // so assignment pickers and labels can render. All writes still go through
-    // the backend, where ADMIN/DELIVERY_LEAD permissions are enforced.
     match /roleTemplates/{roleTemplateId} {
       allow read: if signedIn();
       allow write: if false;
