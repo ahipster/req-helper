@@ -81,7 +81,7 @@ Uploads become SourceArtifact metadata; file bytes live in GCS/external storage.
 │ ✓ Business      │ Outcome / scope summary     │ 2 gaps             │
 │ ✓ Data          │                             │ 1 conflict         │
 │ ✓ Architecture  │ Requirements 14             │ 2 blocking tasks   │
-│ ! Security      │ Verified 8                  │                    │
+│ ! Security      │ Verified-current 8          │                    │
 │ ✓ Operations    │ Revised today 3             │ Readiness 68%      │
 ├─────────────────┴─────────────────────────────┴────────────────────┤
 │ Members: Sponsor · Delivery Lead · 5 participants · 2 observers   │
@@ -151,16 +151,17 @@ Open conflicts: C-17
 ## 8. Requirements
 
 ```text
-┌────────┬──────────────────────────────┬─────────┬──────────────┐
-│ ID     │ Requirement                  │ Rev     │ State        │
-├────────┼──────────────────────────────┼─────────┼──────────────┤
-│ R-001  │ Verification source...       │ 3       │ VERIFIED     │
-│ R-002  │ Integration contract...      │ 2       │ CONFLICTED   │
-└────────┴──────────────────────────────┴─────────┴──────────────┘
+┌────────┬─────────────────────────┬─────┬────────────┬──────────────┐
+│ ID     │ Requirement             │ Rev │ Lifecycle  │ Verification │
+├────────┼─────────────────────────┼─────┼────────────┼──────────────┤
+│ R-001  │ Verification source...  │ 3   │ PROPOSED   │ VERIFIED ✓   │
+│ R-002  │ Integration contract... │ 2   │ CONFLICTED │ MISSING      │
+└────────┴─────────────────────────┴─────┴────────────┴──────────────┘
 
 Selected R-001 rev 3
 Priority: HIGH       Criticality: CRITICAL
 Owner: Data
+Lifecycle: PROPOSED
 Current verification: Cara · VERIFIED · rev 3
 Authoritative sources: Concept K-4, Decision D-3
 Acceptance: 3 current · 1 stale from rev 2
@@ -168,7 +169,7 @@ Acceptance: 3 current · 1 stale from rev 2
 [Edit] [Request verification] [Evidence] [History]
 ```
 
-Manual Edit uses the same audited RequirementRevision path as AI edits.
+Requirement lifecycle and human verification are deliberately separate. Manual Edit uses the same audited RequirementRevision path as AI edits.
 
 ## 9. Requirement History Drawer
 
