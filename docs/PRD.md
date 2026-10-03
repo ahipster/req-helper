@@ -2,381 +2,388 @@
 
 ## 1. Purpose
 
-Req Helper is a PoC for AI-first requirements discovery and convergence in an enterprise/bank context. It turns an initial signal, problem, request or idea into a persistent Delivery Subject and orchestrates the people, knowledge and AI loops needed to produce an implementation-ready requirement package.
+Req Helper is a one-week PoC for AI-first requirements discovery and convergence in an enterprise/bank context. It turns an initial signal/problem/idea into a persistent Delivery Subject and orchestrates people, enterprise knowledge and AI loops until it can produce a traceable implementation-ready requirement package.
 
-The system ends before implementation/deployment. Another SDLC system consumes the output.
+The product stops before code generation/deployment. A downstream SDLC consumes the package.
 
 ## 2. Product thesis
 
-The primary object is a **Delivery Subject**. Chat is only one interaction mechanism.
-
-A Delivery Subject accumulates:
-- original signal and desired outcome;
-- relevant enterprise knowledge references;
-- affected perspectives and owners;
-- human contributions and evidence;
-- authoritative verifications;
-- structured requirements;
-- assumptions, gaps, conflicts and decisions;
-- proposed diffs to enterprise artifacts;
-- affected-area work packages;
-- acceptance criteria;
-- evaluation definitions;
-- dependencies and traceability;
-- deterministic readiness state.
-
-## 3. Problem
-
-Requirements are distributed across people and systems. Formal owners often know only part of the reality. Useful knowledge exists outside ownership boundaries. Different disciplines discover requirements asynchronously, contradictions surface late, provenance gets lost, and downstream teams receive unevenly mature requirements.
-
-Req Helper makes this a persistent, traceable, multi-perspective feedback system rather than a series of meetings and documents.
-
-## 4. PoC success criterion
-
-During the war-room week, a real signal must move through the following lifecycle without a parallel hand-maintained requirements document:
+The durable object is a **Delivery Subject**, not a transcript or agent session.
 
 ```text
-SIGNAL
- -> DELIVERY SUBJECT
- -> KNOWLEDGE / IMPACT HYPOTHESES
- -> HUMAN PERSPECTIVE DRILLS
- -> STRUCTURED REQUIREMENTS
- -> GAP / CONFLICT / DECISION LOOPS
- -> AREA WORK PACKAGES
- -> ACCEPTANCE CRITERIA + EVALS
- -> READY PACKAGE
+Signal / source material
+ -> Delivery Subject + scope/outcome
+ -> enterprise knowledge / impact hypotheses
+ -> required perspectives + memberships/assignments
+ -> perspective-specific human drills
+ -> contributions + evidence + verification
+ -> structured requirements + revisions/provenance
+ -> gaps / assumptions / N-party conflicts / decisions
+ -> affected-area work packages
+ -> acceptance criteria + evals
+ -> deterministic readiness
+ -> human + machine-readable package
 ```
 
-The team must be able to observe why the flow stalls, tune prompts/workflow, rerun affected analysis, and distinguish AI failures from domain/workflow/ownership failures.
+## 3. Non-goals
 
-The PoC must also demonstrate that loss or staleness of OpenCode local session state does not lose product state: a participant can continue from Firestore-backed context after session recreation.
+Not in the PoC:
 
-## 5. Non-goals
+- autonomous implementation/deployment;
+- generic enterprise knowledge graph;
+- authoritative write-back to source repositories;
+- full project/portfolio management;
+- enterprise-complete IAM/SCIM/group management;
+- generic workflow/agent platform;
+- shared multi-human OpenCode sessions.
 
-Not in the one-week PoC:
-- generic enterprise ontology/knowledge graph;
-- autonomous implementation or deployment;
-- authoritative write-back to architecture/process/model repositories;
-- replacement for Jira/project portfolio tools;
-- full governance/approval engine;
-- production-grade enterprise IAM/SCIM;
-- generic agent platform.
+## 4. Actors
 
-## 6. Actors
+- **Sponsor** — introduces the signal and follows outcome/progress.
+- **Delivery Lead** — owns convergence for a specific Delivery Subject.
+- **Perspective Owner/Delegate** — authoritative human for a specific perspective in a specific Delivery Subject.
+- **Contributor** — supplies useful knowledge without automatic authority.
+- **Reviewer** — advisory review/challenge role; does not satisfy authoritative verification by itself.
+- **Knowledge Steward** — validates enterprise references/impacts where appropriate.
+- **Downstream SDLC Consumer** — consumes work packages/requirements programmatically or via export.
+- **War-room Operator** — diagnoses model/prompt/context/workflow failures.
+- **Req Helper Admin** — configures PoC users/global roles/perspective templates.
 
-### Signal Sponsor
-Introduces the problem/opportunity and follows progress.
+## 5. Core invariants
 
-### Delivery Lead
-Owns convergence of the Delivery Subject and resolves assignment/readiness issues.
+1. Firestore domain state is authoritative; OpenCode state is disposable.
+2. Contribution is not authority.
+3. Global role/job title/expertise hint is not Delivery Subject authority.
+4. Delivery Subject membership controls access; PerspectiveAssignment controls authority.
+5. Every material requirement has explicit provenance.
+6. Verification is immutable and tied to a specific target revision.
+7. Semantic Requirement edits create RequirementRevision records and invalidate previous-revision verification for readiness.
+8. Contradictions are first-class N-party Conflict records.
+9. Decisions are explicit human-owned records.
+10. Readiness is deterministic code.
+11. AI text never mutates authoritative state directly; only validated commands do.
 
-### Perspective Owner
-Authoritative human for a perspective such as business, process, data, architecture, security, risk, compliance, operations, integration/API, UX or affected system/domain.
-
-### Contributor
-Has useful knowledge without necessarily owning the subject.
-
-### Reviewer / Knowledge Steward
-Verifies requirements or enterprise references/impacts.
-
-### Downstream SDLC Consumer
-Consumes finalized work packages and their traceability, acceptance criteria and evals.
-
-### War-room Operator
-Inspects orchestration traces and tunes configuration/prompts during the PoC.
-
-### Req Helper Admin
-Configures PoC users, global application roles, role templates and perspective templates/catalogue.
-
-## 7. Core product principles
-
-### Contribution is not authority
-A person may provide useful information outside formal ownership. Preserve it, route it to the likely owner, and track verification separately.
-
-### Global role is not Delivery Subject authority
-Application roles, job titles, role templates and expertise hints help configure/suggest participants. Only an explicit Delivery Subject assignment establishes OWNER/DELEGATE/CONTRIBUTOR/REVIEWER relationship for that delivery.
-
-### Provenance is mandatory
-Every important requirement must trace to human statement, enterprise artifact, policy, observation, decision, assumption or explicit AI inference.
-
-### Contradictions are records
-Never hide contradictions inside summaries. Persist them with severity, owners, blocking state and resolution.
-
-### Decisions are records
-A decision captures question, alternatives, outcome, rationale, owner, participants and affected requirements.
-
-### Readiness is deterministic
-The LLM can suggest missing work, but code determines whether a Delivery Subject is ready.
-
-### OpenCode is disposable execution state
-Firestore is authoritative. OpenCode sessions/local storage may be lost or stale and must be recreatable from Firestore-backed context.
-
-## 8. Functional requirements
+## 6. Functional requirements
 
 ### FR-1 Create Delivery Subject
-A user can create a Delivery Subject from natural-language signal text and optional links/documents. Preserve the original signal verbatim.
 
-### FR-2 Clarify signal
-AI proposes problem statement, desired outcome, scope and unknowns. The initiating human can correct them.
+Create from ordinary language plus optional source links/documents. Preserve `initialSignal` verbatim and immutable.
 
-### FR-3 Discover relevant knowledge
-The system queries configured KnowledgeProviders and links relevant concepts, glossary terms, processes, APIs, applications, solutions, policies, controls and architecture artifacts.
+### FR-2 Clarify outcome and scope
 
-### FR-4 Discover perspectives
-AI proposes affected perspectives with rationale and confidence. Delivery Lead confirms, removes or adds perspectives.
+AI may propose, but a human can correct:
 
-### FR-5 Assign humans
-Each perspective supports OWNER, DELEGATE, CONTRIBUTOR and REVIEWER relationships. Expertise hints may suggest candidates but cannot establish authority automatically.
+- problem statement;
+- desired outcome;
+- `scopeIn`;
+- `scopeOut`;
+- constraints;
+- success measures;
+- unknowns/gaps.
 
-### FR-6 Run smart drills
-The system asks targeted questions based on ownership relevance, uncertainty, criticality, dependencies, contradictions, missing acceptance criteria and confidence deficits.
+### FR-3 Attach source material
 
-Formal ownership influences priority, not whether a question may be asked.
+Links/uploads are represented as `SourceArtifact` metadata. Large bytes are stored in GCS/external systems, not Firestore.
 
-### FR-7 Capture contribution semantics
-For each meaningful human statement capture:
-- verbatim statement;
-- author;
-- perspective;
-- ownership relation;
-- epistemic mode where possible: KNOW / BELIEVE / OBSERVED / UNKNOWN;
-- confidence;
-- evidence links;
-- verification status;
-- likely authoritative owner.
+### FR-4 Discover enterprise knowledge
 
-### FR-8 Synthesize structured requirements
-AI proposes new/updated requirements from validated context. Every mutation validates against schema and keeps provenance.
+Search configured KnowledgeProviders for processes, concepts, APIs, applications, solutions, policies, controls, decisions and services. Persist references with source/version metadata.
 
-### FR-9 Detect gaps
-Persist unresolved missing information with perspective, severity, owner, blocking state and status.
+### FR-5 Discover perspectives
 
-### FR-10 Detect conflicts
-Persist contradictions between requirements, artifacts, decisions or contributions. Route them to affected humans.
+AI proposes affected perspectives with rationale/criticality. Delivery Lead confirms/adds/removes. A required perspective remaining PROPOSED blocks readiness.
 
-### FR-11 Record decisions
-Humans can record explicit decisions; AI may frame options but cannot silently decide contested business/architecture choices.
+### FR-6 Manage access and authority
 
-### FR-12 Link proposed enterprise diffs
-For linked enterprise artifacts, record ADD/MODIFY/REMOVE/DEPRECATE/UNKNOWN_CHANGE proposals. No authoritative write-back in PoC.
+- Delivery Subject membership: SPONSOR / DELIVERY_LEAD / PARTICIPANT / OBSERVER.
+- Perspective assignment: OWNER / DELEGATE / CONTRIBUTOR / REVIEWER.
+- Expertise hints may suggest candidates but never establish authority.
 
-### FR-13 Split into work packages
-When requirements converge, group them by implementation/affected area while preserving cross-package dependencies.
+### FR-7 Run smart drills
 
-### FR-14 Generate acceptance criteria
-Critical requirements require detailed acceptance criteria, ideally Given/When/Then where appropriate.
+Question priority considers ownership relevance, requirement criticality, uncertainty, contradiction severity, dependency importance, missing acceptance/evals, uncovered perspective and confidence deficit.
 
-### FR-15 Generate eval definitions
-Define downstream verification such as deterministic tests, performance/security checks, policy checks, human review, or semantic/LLM evals with explicit threshold/failure behavior.
+The system may ask a participant about knowledge outside their formal ownership; resulting knowledge remains non-authoritative until verified by appropriate OWNER/DELEGATE.
 
-### FR-16 Compute readiness
-See `docs/DOMAIN_MODEL.md` and `src/domain/readiness.ts`.
+### FR-8 Persist task lifecycle
 
-### FR-17 Export package
-Export machine-readable JSON and human-readable Markdown from the same domain state.
-
-### FR-18 War-room observability
-Expose workflow state, waits, model/tool calls, retries, structured outputs, schema failures, context/hydration metadata and domain mutations.
-
-### FR-19 Admin/configuration UI
-An ADMIN can manage PoC user profiles, global application roles, role templates and perspective templates/catalogue through UI/backend APIs. A Delivery Lead/Admin can manage Delivery Subject perspective assignments.
-
-The P0 admin model is specified in `docs/ADMIN_UI.md`.
-
-### FR-20 OpenCode/Firestore state synchronization
-For every meaningful OpenCode run the backend must:
-- load current authoritative Firestore state;
-- resolve or recreate the OpenCode session;
-- compare Delivery Subject revision to AgentThread `lastContextRevision`;
-- inject bounded current context whenever state changed;
-- persist user-visible message continuity independently of OpenCode disk;
-- schema-validate outputs;
-- reject stale/duplicate mutations using revisions/idempotency;
-- update AgentThread/run metadata after completion.
-
-There is no wholesale replication of OpenCode local disk/database to Firestore. Detailed mechanics are defined in `docs/OPENCODE_STATE_SYNC.md`.
-
-## 9. UI requirements
-
-The core layout is three-pane:
+Canonical states:
 
 ```text
-┌────────────────┬────────────────────────────────┬───────────────────┐
-│ What matters   │ Conversation / current task    │ Structured state  │
-│ to this user   │                                │ and context       │
-└────────────────┴────────────────────────────────┴───────────────────┘
+OPEN -> IN_PROGRESS -> ANSWERED -> PROCESSING -> COMPLETED
+                     \-> WAITING_ON_OTHER -> IN_PROGRESS
+Any nonterminal -> CANCELLED
 ```
 
-### Screen: My Work
-Shows blocking questions, review tasks and followed Delivery Subjects. Non-technical users should see tasks, not methodology.
+Human response is durable before AI processing begins.
 
-### Screen: New Signal
-Minimal natural-language entry plus optional context links/documents.
+### FR-9 Capture contribution semantics
 
-### Screen: Delivery Overview
-Shows outcome, perspectives, requirement counts, open issues, overall readiness and recent activity.
+Store verbatim statement, author, perspective, epistemic mode, human-stated confidence, optional AI extraction confidence, evidence and likely authoritative owner.
 
-### Screen: Drill Workspace
-Left: current focus/questions. Center: conversation. Right: requirement/context/evidence and related perspectives. Actions include I DON'T KNOW, ASK SOMEONE and SHOW BIGGER PICTURE.
+### FR-10 Evidence and provenance
 
-### Screen: Bigger Picture
-Shows cross-perspective impact map without requiring the user to work in every perspective.
+Persist Evidence and RequirementSource as first-class records. RequirementSource is revision-bound and may link Contribution, Evidence, KnowledgeReference, Decision, Assumption, SourceArtifact or AI inference.
 
-### Screen: Requirements
-Filterable requirements with state, owner, provenance, acceptance coverage and related knowledge.
+### FR-11 Verification
 
-### Screen: Conflicts & Decisions
-Shows blocking conflicts, participating perspectives, AI-proposed options and explicit human decision recording.
+OWNER/DELEGATE may verify/reject/amend a Contribution, current Requirement revision or ProposedDiff. Verification is immutable/revision-bound. Reviewer feedback is advisory only.
 
-### Screen: Enterprise Impact
-Shows linked artifacts and proposed before/after effects. Users can mark incorrect relationships.
+### FR-12 Requirement lifecycle and editing
 
-### Screen: Work Packages
-Shows area-specific packages, readiness, dependencies and missing information.
+AI or human may propose/edit requirements through the same application command path.
 
-### Screen: Work Package Detail
-Shows requirements, acceptance criteria, evals, dependencies and linked enterprise knowledge.
+Every semantic edit:
 
-### Screen: Readiness
-Shows deterministic checks with blockers and next actionable item.
+1. validates permissions/schema;
+2. creates a RequirementRevision;
+3. records actor/rationale/provenance;
+4. increments current requirement revision;
+5. supersedes/invalidate readiness value of prior-revision Verification;
+6. marks revision-bound acceptance/evals stale where applicable;
+7. triggers targeted conflict/gap reassessment.
 
-### Screen: Final Package
-Human-readable package plus JSON/Markdown export.
+`priority` = urgency/sequencing. `criticality` = consequence if wrong/omitted.
 
-### Screen: War Room
-Shows workflow state, agent activity, waits, traces, retries, context revision/hydration mode, quality indicators and rerun controls.
+### FR-13 Detect gaps
 
-### Screen group: Admin
-Admin Overview, Users, User Detail, Role Templates, Perspective Catalogue and Delivery Subject Assignment UI as defined in `docs/ADMIN_UI.md`.
+Persist gaps with severity, relevant perspective, owner hint, blocking state and lifecycle.
 
-## 10. Smart drill prioritization
+### FR-14 Manage assumptions
 
-Conceptually:
+Assumptions include owner, confidence, criticality, blocking flag, validation method and impact if wrong. HIGH/CRITICAL assumptions must be explicitly managed; blocking assumptions must be resolved/accepted before READY.
+
+### FR-15 Detect and resolve multi-party conflicts
+
+A Conflict contains 2+ positions. Each affected participant responds in their own thread/task. The shared conflict workspace aggregates positions/evidence. AI may summarize/options-frame; a named human decision owner records the Decision or source correction.
+
+No shared OpenCode session is required.
+
+### FR-16 Decisions
+
+Persist question, alternatives, decision, rationale, owner, participants, affected requirements and superseded decision where relevant.
+
+### FR-17 Enterprise impacts
+
+Persist ProposedDiffs to KnowledgeReferences. Users can confirm/reject/correct. No source-system write-back in PoC.
+
+### FR-18 Split work packages
+
+Group requirements by downstream implementation area. A populated WorkPackage must have `targetAreaRef`; optional `targetTeamId` and human coordinator are separate fields.
+
+### FR-19 Acceptance criteria
+
+AcceptanceCriterion can target REQUIREMENT, WORK_PACKAGE or DELIVERY_SUBJECT. Requirement-targeted criteria may bind to a specific revision.
+
+### FR-20 Evaluation definitions
+
+Evaluation can target REQUIREMENT, WORK_PACKAGE or DELIVERY_SUBJECT and defines expected behavior, threshold where relevant and failure behavior.
+
+### FR-21 Dependencies
+
+Dependencies may link requirements/work packages/knowledge references. `blocking=true` unambiguously means the dependency must be resolved before READY; merely assigning an owner does not clear it.
+
+### FR-22 Deterministic readiness
+
+See `docs/DOMAIN_MODEL.md` and `src/domain/readiness.ts`. The percentage is informational only.
+
+### FR-23 Realtime collaboration
+
+Multiple logged-in members can work concurrently. Firestore listeners update relevant structured state without resetting the participant's current chat input.
+
+### FR-24 OpenCode state synchronization
+
+Every meaningful run:
+
+- loads current authoritative Firestore state;
+- resolves/recreates the OpenCode session;
+- compares current domain revision with AgentThread `contextRevisionPresented`;
+- injects bounded authoritative context when needed;
+- persists user-visible messages independently from OpenCode disk;
+- validates outputs and revision/idempotency constraints;
+- commits accepted commands transactionally;
+- records `domainRevisionAtEnd` separately from `contextRevisionPresented`.
+
+A run must **not** claim the session has seen mutations that occurred at the end of that same run unless those mutations are subsequently presented in context.
+
+### FR-25 Requirement history UX
+
+Normal participants can open a requirement history drawer showing revisions, actor/reason, provenance changes and current/superseded verifications without entering War Room tooling.
+
+### FR-26 Admin/configuration UI
+
+ADMIN manages users/global roles/role templates/perspective templates. Delivery Lead/Admin manages memberships and perspective assignments for subjects they may administer.
+
+### FR-27 War-room observability
+
+Show AgentRun status, hydration mode, session generation, context/domain revisions, tool calls, schema failures, applied/rejected commands and classified failure type.
+
+War-room operators may rerun/diagnose. Assignment override is only available when the operator also has ADMIN or subject Delivery Lead permission.
+
+### FR-28 Package export and read API
+
+Generate Markdown and JSON from persisted state and expose P0 read APIs:
 
 ```text
-priority(question) =
-  ownership_relevance
-+ requirement_criticality
-+ unresolved_uncertainty
-+ contradiction_severity
-+ dependency_importance
-+ missing_acceptance_criteria
-+ uncovered_perspective
-+ confidence_deficit
+GET /api/delivery-subjects/{id}/package
+GET /api/delivery-subjects/{id}/work-packages/{workPackageId}
 ```
 
-The exact weights are configurable and should be tuned during war-room testing.
+## 7. UI requirements
 
-## 11. User stories
+### My Work
 
-### Sponsor
-- As a sponsor, I can start with ordinary language.
-- As a sponsor, I can correct the AI's interpretation.
-- As a sponsor, I can see progress/readiness without reading every requirement.
+Shows the current user's blocking/open tasks, reviews and followed/observed Delivery Subjects. No fake role switcher in production UI; PoC persona switching is clearly marked as developer/test-only if present.
 
-### Perspective owner
-- I see questions prioritized for my perspective.
-- I can understand why I am being asked something.
-- I can contribute outside my ownership without becoming authoritative by accident.
-- I can verify/reject/amend a routed contribution.
-- I can challenge generated requirements.
-- I can inspect the bigger picture when needed.
+### New Signal
 
-### Delivery Lead
-- I can see covered/unassigned/blocked perspectives.
-- I can see blockers by severity.
-- I can assign/reassign OWNER/DELEGATE/CONTRIBUTOR/REVIEWER.
-- I can use expertise hints as suggestions without granting authority automatically.
-- I can record decisions.
-- I can reopen a requirement/perspective after new evidence.
-- I can see exactly why readiness is blocked.
+Natural-language signal, optional expected outcome, links/uploads. Scope is progressively structured after creation.
 
-### Contributor
-- I can say I know, believe, observed, or do not know.
-- I can suggest a better expert/owner.
+### Delivery Overview
 
-### Knowledge Steward
-- I can inspect linked artifacts and proposed diffs.
-- I can reject incorrect AI-discovered relationships.
-- I can attach an authoritative source.
+Shows outcome, scope, perspectives/owners, requirements, blockers, recent changes and deterministic readiness.
 
-### Downstream SDLC Consumer
-- I can retrieve one area-specific package.
-- I can retrieve requirement provenance, acceptance criteria and evals programmatically.
-- I can inspect cross-area dependencies.
+### Drill Workspace
 
-### War-room Operator
-- I can trace orchestration and model/tool activity.
-- I can see OpenCode session generation, domain/context revisions and hydration mode.
-- I can classify a failure and rerun affected analysis after prompt/config changes.
+Three panes: personal focus, conversation, structured current context. Actions: I DON'T KNOW, ASK SOMEONE, SHOW BIGGER PICTURE.
+
+### Requirements
+
+Filterable requirements plus current status/provenance/verification/acceptance. Detail includes History drawer.
+
+### Verification
+
+Shows target revision, source/evidence and verifier authority. VERIFY/REJECT/AMEND create Verification records; amendment uses normal requirement-revision flow.
+
+### Conflict Workspace
+
+Shared structured conflict page showing all positions/evidence, participant tasks and decision owner. `[Discuss]` means asynchronous shared conflict workspace, not a shared agent session.
+
+### Enterprise Impact
+
+KnowledgeReference + ProposedDiff with source/version/rationale and confirm/reject/correct actions.
+
+### Work Packages
+
+Shows target implementation area/team, requirements, dependencies, acceptance/evals and readiness.
+
+### Readiness
+
+Shows every deterministic check and exact blockers/next actions.
+
+### Final Package
+
+Shows package sections plus JSON/Markdown export and downstream read-API identifiers.
+
+### War Room
+
+Operational/debug view only. Permission-sensitive controls.
 
 ### Admin
-- I can manage PoC users without editing Firestore manually.
-- I can assign global application roles.
-- I can manage role templates and perspective templates/catalogue.
-- I can deactivate users/templates while preserving historical audit references.
 
-## 12. Readiness baseline
+Users/global roles, role templates, perspective templates, Delivery Subject membership and assignments.
 
-A Delivery Subject cannot be READY while any of the following remain true:
-- problem/outcome is missing;
-- required perspective lacks accountable OWNER/DELEGATE;
-- critical requirement lacks authoritative verification;
-- blocking gap/conflict is open;
-- major assumption has no explicit status/owner;
-- affected knowledge is unlinked where required;
-- critical requirement has no work package;
-- critical requirement lacks acceptance criteria;
-- required eval is missing;
-- cross-package dependency is unresolved/unowned.
+## 8. User stories
 
-Global application roles, role templates and expertise hints do not satisfy perspective ownership readiness.
+### Sponsor
 
-## 13. PoC metrics
+- Start a Delivery Subject using ordinary language.
+- Correct problem/outcome/scope.
+- See progress/readiness without reading every technical detail.
 
-Primary:
-- time from signal to ready package;
-- human interactions and time per participant;
-- blocking gaps discovered;
-- cross-perspective conflicts discovered;
-- requirements changed after review;
-- percentage with traceable provenance;
-- acceptance/eval coverage;
-- unowned blockers;
-- reopened requirements.
+### Delivery Lead
 
-War-room qualitative:
-- was the question useful?
-- was it routed to the right person?
-- did the user understand why they were involved?
-- did AI interpret the answer correctly?
-- was context missing or excessive?
-- did stale-session recovery preserve correct current state?
+- Confirm required perspectives.
+- Add/remove subject members.
+- Assign OWNER/DELEGATE/CONTRIBUTOR/REVIEWER.
+- See missing authority/blockers.
+- Reassign work and reopen discovery when new evidence appears.
+- Record/route decisions.
 
-## 14. Final handoff contract
+### Perspective Owner/Delegate
 
-The package must contain at least:
+- See questions relevant to my perspective.
+- Understand why I am asked.
+- Contribute outside my ownership without accidentally becoming authoritative.
+- Verify/reject/amend revision-specific contributions/requirements.
+- Inspect requirement history and bigger-picture impact.
+
+### Contributor
+
+- State what I know/believe/observed/don't know.
+- Attach evidence/source material.
+- Suggest another expert.
+
+### Reviewer
+
+- Comment/challenge/recommend changes.
+- See that my review is advisory unless separately assigned OWNER/DELEGATE.
+
+### Knowledge Steward
+
+- Validate source references.
+- Reject incorrect AI-discovered relationships.
+- Confirm/reject proposed enterprise diffs.
+
+### Conflict participant
+
+- Submit my position/evidence asynchronously.
+- See summarized positions from others.
+- Know who has decision authority.
+
+### Downstream consumer
+
+- Retrieve package/work package via API.
+- Inspect requirement revision/provenance/verification.
+- Retrieve acceptance/evals/dependencies programmatically.
+
+### War-room operator
+
+- Distinguish MODEL/PROMPT/CONTEXT/KNOWLEDGE/WORKFLOW/DOMAIN_MODEL/UX/OWNERSHIP/CONCURRENCY failures.
+- Rerun analysis without duplicating mutations.
+- Inspect context revision/session recovery behavior.
+
+### Admin
+
+- Manage PoC users and global roles.
+- Configure templates.
+- Preserve historical references when users/templates are deactivated.
+
+## 9. Readiness baseline
+
+READY requires all blocking checks to pass, including:
+
+- outcome defined;
+- all required perspectives confirmed;
+- all required perspectives have active OWNER/DELEGATE;
+- HIGH/CRITICAL requirements have current-revision human verification and authoritative provenance;
+- no blocking gap/conflict/assumption/dependency remains unresolved;
+- major assumptions managed;
+- enterprise impact links satisfied where required;
+- critical requirements allocated to targeted work packages;
+- current acceptance criteria/evals present;
+- no blocking human task remains active.
+
+## 10. Final handoff contract
 
 ```json
 {
   "deliverySubject": {},
-  "outcomes": [],
+  "scope": {},
+  "sourceArtifacts": [],
   "decisions": [],
   "assumptions": [],
   "requirements": [],
+  "requirementSources": [],
+  "verifications": [],
   "enterpriseImpacts": [],
-  "workPackages": [
-    {
-      "area": "...",
-      "requirements": [],
-      "acceptanceCriteria": [],
-      "evaluations": [],
-      "dependencies": []
-    }
-  ],
+  "workPackages": [],
+  "acceptanceCriteria": [],
+  "evaluations": [],
+  "dependencies": [],
   "traceability": [],
   "readiness": {}
 }
 ```
 
-Product boundary: Req Helper answers **what must change, why, according to whom, based on what evidence, across which areas, and how we will know it is correct**. The downstream AI-first SDLC answers **how to implement, test and deploy it**.
+Req Helper answers **what must change, why, according to whom, based on what evidence, across which implementation areas, and how we will know it is correct**. The downstream AI-first SDLC answers **how to implement, test and deploy it**.
