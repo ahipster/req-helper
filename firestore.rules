@@ -53,8 +53,7 @@ service cloud.firestore {
     }
 
     // P0 architecture truth is a normalized, immutable derived baseline from
-    // approved Git Markdown architecture repositories. Browser clients may
-    // read published normalized topology; ingestion/configuration remains backend-only.
+    // approved Git Markdown repositories. Source credentials never live here.
     match /architectureSources/{sourceId} {
       allow read: if signedIn();
       allow write: if false;
@@ -64,8 +63,25 @@ service cloud.firestore {
       allow read: if signedIn();
       allow write: if false;
 
-      match /{subcollection}/{documentId} {
+      match /elements/{elementId} {
         allow read: if signedIn();
+        allow write: if false;
+      }
+
+      match /relationships/{relationshipId} {
+        allow read: if signedIn();
+        allow write: if false;
+      }
+
+      match /views/{viewId} {
+        allow read: if signedIn();
+        allow write: if false;
+      }
+
+      // Ingestion diagnostics are an admin/steward workflow, not general
+      // architecture reference data.
+      match /ingestionFindings/{findingId} {
+        allow read: if isAdmin();
         allow write: if false;
       }
     }
