@@ -1,4 +1,4 @@
-import { createOpencodeClient } from "@opencode-ai/sdk";
+import { createOpencodeClient } from "@opencode-ai/sdk/v2";
 import { z } from "zod";
 import type {
   AgentHarness,
@@ -22,6 +22,9 @@ export type OpenCodeHarnessConfig = {
  * Req Helper remains responsible for persistence, thread leases, authoritative
  * Firestore context hydration, authorization, domain commands and audit records.
  * OpenCode is only the reasoning/tool execution harness.
+ *
+ * The v2 SDK entry point is used because its generated prompt type exposes the
+ * structured-output `format` contract used by Req Helper.
  */
 export class OpenCodeHarness implements AgentHarness {
   private readonly client: ReturnType<typeof createOpencodeClient>;
@@ -32,7 +35,6 @@ export class OpenCodeHarness implements AgentHarness {
   constructor(config: OpenCodeHarnessConfig) {
     this.client = createOpencodeClient({
       baseUrl: config.baseUrl,
-      throwOnError: true,
     });
     this.providerId = config.providerId;
     this.modelId = config.modelId;
@@ -43,7 +45,10 @@ export class OpenCodeHarness implements AgentHarness {
 
     if (input.existingSessionId) {
       try {
-        await this.client.session.get({ path: { id: input.existingSessionId } });
+        await this.client.session.get(
+          { sessionID: input.existingSessionId },
+          { throwOnError: true },
+        );
         return {
           logicalThreadId: input.logicalThreadId,
           sessionId: input.existingSessionId,
@@ -56,19 +61,20 @@ export class OpenCodeHarness implements AgentHarness {
       }
     }
 
-    const created = await this.client.session.create({
-      body: {
+    const created = await this.client.session.create(
+      {
         title: `ReqHelper:${input.deliverySubjectId}:${input.perspectiveId ?? "general"}:${input.participantId}`,
       },
-    });
+      { throwOnError: true },
+    );
 
-    const session = ((created as unknown as { data?: { id: string } }).data ?? created) as unknown as {
-      id: string;
-    };
+    if (!created.data?.id) {
+      throw new Error("OpenCode session creation returned no session ID");
+    }
 
     return {
       logicalThreadId: input.logicalThreadId,
-      sessionId: session.id,
+      sessionId: created.data.id,
       sessionGeneration: currentGeneration + 1,
       recreated: true,
     };
@@ -79,9 +85,9 @@ export class OpenCodeHarness implements AgentHarness {
     this.activeRunSession.set(input.metadata.runId, input.thread.sessionId);
 
     try {
-      const result = await this.client.session.prompt({
-        path: { id: input.thread.sessionId },
-        body: {
+      const result = await this.client.session.prompt(
+        {
+          sessionID: input.thread.sessionId,
           ...(this.providerId && this.modelId
             ? { model: { providerID: this.providerId, modelID: this.modelId } }
             : {}),
@@ -97,31 +103,34 @@ export class OpenCodeHarness implements AgentHarness {
             retryCount: 2,
           },
         },
-      });
+        { throwOnError: true },
+      );
 
-      const response = result as unknown as {
-        data?: {
-          info?: {
-            structured_output?: unknown;
-            error?: { name?: string; message?: string };
-            modelID?: string;
-            providerID?: string;
-          };
+      const info = result.data?.info;
+      if (!info) throw new Error("OpenCode prompt returned no assistant message info");
+
+      if (info.error) {
+        const structuredError = info.error as unknown as {
+          name?: string;
+          message?: string;
+          data?: { message?: string };
         };
-      };
-
-      if (response.data?.info?.error) {
-        throw new Error(response.data.info.error.message ?? response.data.info.error.name ?? "OpenCode prompt failed");
+        throw new Error(
+          structuredError.data?.message ??
+            structuredError.message ??
+            structuredError.name ??
+            "OpenCode prompt failed",
+        );
       }
 
-      const output = input.schema.parse(response.data?.info?.structured_output);
+      const output = input.schema.parse(info.structured);
 
       return {
         output,
         sessionId: input.thread.sessionId,
         sessionGeneration: input.thread.sessionGeneration,
-        provider: response.data?.info?.providerID ?? this.providerId,
-        model: response.data?.info?.modelID ?? this.modelId,
+        provider: info.providerID ?? this.providerId,
+        model: info.modelID ?? this.modelId,
       };
     } finally {
       this.activeRunSession.delete(input.metadata.runId);
@@ -141,6 +150,9 @@ export class OpenCodeHarness implements AgentHarness {
   async cancel(runId: string): Promise<void> {
     const sessionId = this.activeRunSession.get(runId);
     if (!sessionId) return;
-    await this.client.session.abort({ path: { id: sessionId } });
+    await this.client.session.abort(
+      { sessionID: sessionId },
+      { throwOnError: true },
+    );
   }
 }
