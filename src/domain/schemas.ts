@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+export const Criticality = z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
+export const Priority = z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
+
 export const DeliverySubjectStatus = z.enum([
   "DRAFT",
   "DISCOVERING",
@@ -10,8 +13,6 @@ export const DeliverySubjectStatus = z.enum([
   "HANDED_OFF",
   "CANCELLED",
 ]);
-
-export const Criticality = z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
 
 export const PerspectiveType = z.enum([
   "BUSINESS",
@@ -31,6 +32,14 @@ export const PerspectiveType = z.enum([
   "OTHER",
 ]);
 
+export const PerspectiveStatus = z.enum([
+  "PROPOSED",
+  "CONFIRMED",
+  "IN_PROGRESS",
+  "COMPLETE",
+  "BLOCKED",
+]);
+
 export const AssignmentRelationship = z.enum([
   "OWNER",
   "DELEGATE",
@@ -43,6 +52,13 @@ export const SystemRole = z.enum([
   "PARTICIPANT",
   "DELIVERY_LEAD",
   "WAR_ROOM_OPERATOR",
+]);
+
+export const SubjectRole = z.enum([
+  "SPONSOR",
+  "DELIVERY_LEAD",
+  "PARTICIPANT",
+  "OBSERVER",
 ]);
 
 export const UserProfileSchema = z.object({
@@ -77,6 +93,162 @@ export const PerspectiveTemplateSchema = z.object({
   defaultPromptSkill: z.string().optional(),
 });
 
+export const DeliverySubjectSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  initialSignal: z.string().min(1),
+  problemStatement: z.string().min(1).optional(),
+  desiredOutcome: z.string().min(1).optional(),
+  scopeIn: z.array(z.string()).default([]),
+  scopeOut: z.array(z.string()).default([]),
+  constraints: z.array(z.string()).default([]),
+  successMeasures: z.array(z.string()).default([]),
+  status: DeliverySubjectStatus,
+  priority: Priority.optional(),
+  sponsorId: z.string().optional(),
+  deliveryLeadId: z.string().optional(),
+  currentIteration: z.number().int().nonnegative().default(0),
+  revision: z.number().int().nonnegative().default(0),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const DeliverySubjectMembershipSchema = z.object({
+  id: z.string(),
+  deliverySubjectId: z.string(),
+  userId: z.string(),
+  roles: z.array(SubjectRole).min(1),
+  active: z.boolean().default(true),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const PerspectiveSchema = z.object({
+  id: z.string(),
+  deliverySubjectId: z.string(),
+  type: PerspectiveType,
+  name: z.string(),
+  description: z.string().optional(),
+  criticality: Criticality,
+  required: z.boolean(),
+  rationale: z.string().optional(),
+  status: PerspectiveStatus,
+});
+
+export const PerspectiveAssignmentSchema = z.object({
+  id: z.string(),
+  perspectiveId: z.string(),
+  userId: z.string(),
+  relationship: AssignmentRelationship,
+  status: z.enum(["ACTIVE", "COMPLETED", "REMOVED"]),
+});
+
+export const EvidenceKind = z.enum([
+  "HUMAN_STATEMENT",
+  "KNOWLEDGE_REFERENCE",
+  "OBSERVATION",
+  "POLICY",
+  "DECISION",
+  "SOURCE_ARTIFACT",
+  "OTHER",
+]);
+
+export const EvidenceSchema = z.object({
+  id: z.string(),
+  deliverySubjectId: z.string(),
+  kind: EvidenceKind,
+  sourceId: z.string(),
+  excerpt: z.string().optional(),
+  uri: z.string().optional(),
+  createdAt: z.string(),
+});
+
+export const SourceArtifactSchema = z.object({
+  id: z.string(),
+  deliverySubjectId: z.string(),
+  name: z.string(),
+  mediaType: z.string().optional(),
+  storageType: z.enum(["LINK", "GCS", "EXTERNAL"]),
+  uri: z.string(),
+  sizeBytes: z.number().int().nonnegative().optional(),
+  sha256: z.string().optional(),
+  addedBy: z.string(),
+  createdAt: z.string(),
+});
+
+export const ContributionSchema = z.object({
+  id: z.string(),
+  deliverySubjectId: z.string(),
+  taskId: z.string().optional(),
+  authorId: z.string(),
+  perspectiveId: z.string().optional(),
+  statement: z.string().min(1),
+  epistemicMode: z.enum(["KNOW", "BELIEVE", "OBSERVED", "UNKNOWN", "UNSPECIFIED"]),
+  ownershipRelationship: AssignmentRelationship.optional(),
+  statedConfidence: z.number().min(0).max(1).optional(),
+  extractionConfidence: z.number().min(0).max(1).optional(),
+  evidenceIds: z.array(z.string()).default([]),
+  likelyAuthoritativeOwnerId: z.string().optional(),
+  createdAt: z.string(),
+});
+
+export const VerificationSchema = z.object({
+  id: z.string(),
+  deliverySubjectId: z.string(),
+  targetType: z.enum(["CONTRIBUTION", "REQUIREMENT", "PROPOSED_DIFF"]),
+  targetId: z.string(),
+  targetRevision: z.number().int().positive().optional(),
+  verifierId: z.string(),
+  perspectiveId: z.string().optional(),
+  verdict: z.enum(["VERIFIED", "REJECTED", "AMENDED"]),
+  rationale: z.string().optional(),
+  status: z.enum(["ACTIVE", "SUPERSEDED"]).default("ACTIVE"),
+  createdAt: z.string(),
+});
+
+export const KnowledgeReferenceSchema = z.object({
+  id: z.string(),
+  deliverySubjectId: z.string(),
+  externalType: z.enum([
+    "CAPABILITY",
+    "BUSINESS_PROCESS",
+    "CONCEPT",
+    "INFORMATION_MODEL",
+    "API",
+    "SOLUTION",
+    "APPLICATION",
+    "POLICY",
+    "CONTROL",
+    "ARCHITECTURE_DECISION",
+    "GLOSSARY_TERM",
+    "SYSTEM",
+    "SERVICE",
+    "DOCUMENT",
+    "OTHER",
+  ]),
+  externalSystem: z.string(),
+  externalId: z.string().optional(),
+  title: z.string(),
+  uri: z.string().optional(),
+  version: z.string().optional(),
+  retrievedAt: z.string(),
+  summary: z.string().optional(),
+  relevance: z.number().min(0).max(1).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const ProposedDiffSchema = z.object({
+  id: z.string(),
+  deliverySubjectId: z.string(),
+  knowledgeReferenceId: z.string(),
+  diffType: z.enum(["ADD", "MODIFY", "REMOVE", "DEPRECATE", "UNKNOWN_CHANGE"]),
+  before: z.unknown().optional(),
+  after: z.unknown().optional(),
+  reason: z.string(),
+  status: z.enum(["PROPOSED", "CONFIRMED", "REJECTED", "SUPERSEDED"]),
+  revision: z.number().int().positive().default(1),
+});
+
 export const RequirementType = z.enum([
   "BUSINESS",
   "FUNCTIONAL",
@@ -106,75 +278,6 @@ export const RequirementStatus = z.enum([
   "SUPERSEDED",
 ]);
 
-export const DeliverySubjectSchema = z.object({
-  id: z.string().min(1),
-  title: z.string().min(1),
-  initialSignal: z.string().min(1),
-  problemStatement: z.string().min(1).optional(),
-  desiredOutcome: z.string().min(1).optional(),
-  status: DeliverySubjectStatus,
-  priority: Criticality.optional(),
-  sponsorId: z.string().optional(),
-  deliveryLeadId: z.string().optional(),
-  currentIteration: z.number().int().nonnegative().default(0),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-});
-
-export const PerspectiveSchema = z.object({
-  id: z.string(),
-  deliverySubjectId: z.string(),
-  type: PerspectiveType,
-  name: z.string(),
-  description: z.string().optional(),
-  criticality: Criticality,
-  required: z.boolean(),
-  rationale: z.string().optional(),
-  status: z.enum(["PROPOSED", "CONFIRMED", "IN_PROGRESS", "COMPLETE", "BLOCKED"]),
-});
-
-export const PerspectiveAssignmentSchema = z.object({
-  id: z.string(),
-  perspectiveId: z.string(),
-  userId: z.string(),
-  relationship: AssignmentRelationship,
-  required: z.boolean(),
-  status: z.enum(["ACTIVE", "COMPLETED", "REMOVED"]),
-});
-
-export const ContributionSchema = z.object({
-  id: z.string(),
-  deliverySubjectId: z.string(),
-  taskId: z.string().optional(),
-  authorId: z.string(),
-  perspectiveId: z.string().optional(),
-  statement: z.string().min(1),
-  epistemicMode: z.enum(["KNOW", "BELIEVE", "OBSERVED", "UNKNOWN", "UNSPECIFIED"]),
-  ownershipRelationship: AssignmentRelationship.optional(),
-  confidence: z.number().min(0).max(1).optional(),
-  verificationStatus: z.enum([
-    "UNVERIFIED",
-    "OWNER_VERIFIED",
-    "OWNER_REJECTED",
-    "SUPERSEDED",
-  ]),
-  likelyAuthoritativeOwnerId: z.string().optional(),
-  createdAt: z.string(),
-});
-
-export const RequirementSourceSchema = z.object({
-  requirementId: z.string(),
-  sourceKind: z.enum([
-    "CONTRIBUTION",
-    "KNOWLEDGE_REFERENCE",
-    "DECISION",
-    "ASSUMPTION",
-    "AI_INFERENCE",
-  ]),
-  sourceId: z.string(),
-  authoritative: z.boolean(),
-});
-
 export const RequirementSchema = z.object({
   id: z.string(),
   deliverySubjectId: z.string(),
@@ -182,15 +285,49 @@ export const RequirementSchema = z.object({
   title: z.string().min(1),
   statement: z.string().min(1),
   rationale: z.string().optional(),
-  priority: Criticality,
+  priority: Priority,
   criticality: Criticality,
   status: RequirementStatus,
   ownerId: z.string().optional(),
-  confidence: z.number().min(0).max(1).optional(),
+  extractionConfidence: z.number().min(0).max(1).optional(),
   requiresEvaluation: z.boolean().default(false),
   revision: z.number().int().positive(),
   createdAt: z.string(),
   updatedAt: z.string(),
+});
+
+export const RequirementRevisionSchema = z.object({
+  id: z.string(),
+  deliverySubjectId: z.string(),
+  requirementId: z.string(),
+  revision: z.number().int().positive(),
+  previousRevision: z.number().int().positive().optional(),
+  statement: z.string(),
+  title: z.string(),
+  changedByActorType: z.enum(["HUMAN", "AI", "SYSTEM"]),
+  changedByActorId: z.string().optional(),
+  reason: z.string().optional(),
+  sourceIds: z.array(z.string()).default([]),
+  createdAt: z.string(),
+});
+
+export const RequirementSourceSchema = z.object({
+  id: z.string(),
+  deliverySubjectId: z.string(),
+  requirementId: z.string(),
+  requirementRevision: z.number().int().positive(),
+  sourceKind: z.enum([
+    "CONTRIBUTION",
+    "EVIDENCE",
+    "KNOWLEDGE_REFERENCE",
+    "DECISION",
+    "ASSUMPTION",
+    "SOURCE_ARTIFACT",
+    "AI_INFERENCE",
+  ]),
+  sourceId: z.string(),
+  authoritative: z.boolean(),
+  createdAt: z.string(),
 });
 
 export const GapSchema = z.object({
@@ -204,16 +341,24 @@ export const GapSchema = z.object({
   status: z.enum(["OPEN", "RESOLVED", "ACCEPTED_RISK", "SUPERSEDED"]),
 });
 
+export const ConflictPositionSchema = z.object({
+  id: z.string(),
+  actorId: z.string().optional(),
+  perspectiveId: z.string().optional(),
+  itemType: z.string(),
+  itemId: z.string(),
+  summary: z.string(),
+  evidenceIds: z.array(z.string()).default([]),
+});
+
 export const ConflictSchema = z.object({
   id: z.string(),
   deliverySubjectId: z.string(),
   description: z.string(),
-  itemAType: z.string(),
-  itemAId: z.string(),
-  itemBType: z.string(),
-  itemBId: z.string(),
+  positions: z.array(ConflictPositionSchema).min(2),
   severity: Criticality,
-  ownerIds: z.array(z.string()),
+  ownerIds: z.array(z.string()).min(1),
+  decisionOwnerId: z.string().optional(),
   blocking: z.boolean(),
   resolution: z.string().optional(),
   decisionId: z.string().optional(),
@@ -225,26 +370,53 @@ export const AssumptionSchema = z.object({
   deliverySubjectId: z.string(),
   statement: z.string(),
   ownerId: z.string().optional(),
-  confidence: z.number().min(0).max(1).optional(),
+  statedConfidence: z.number().min(0).max(1).optional(),
+  criticality: Criticality,
+  blocking: z.boolean().default(false),
   validationMethod: z.string().optional(),
   impactIfWrong: z.string().optional(),
   status: z.enum(["OPEN", "VALIDATED", "INVALIDATED", "ACCEPTED", "SUPERSEDED"]),
 });
 
+export const DecisionSchema = z.object({
+  id: z.string(),
+  deliverySubjectId: z.string(),
+  question: z.string(),
+  alternatives: z.array(z.string()).min(1),
+  decision: z.string(),
+  rationale: z.string(),
+  ownerId: z.string(),
+  participantIds: z.array(z.string()).default([]),
+  affectedRequirementIds: z.array(z.string()).default([]),
+  supersedesDecisionId: z.string().optional(),
+  createdAt: z.string(),
+});
+
 export const WorkPackageSchema = z.object({
   id: z.string(),
   deliverySubjectId: z.string(),
-  area: z.string(),
-  ownerId: z.string().optional(),
+  name: z.string(),
+  targetAreaRef: z.string(),
+  targetTeamId: z.string().optional(),
+  coordinatorId: z.string().optional(),
   status: z.enum(["DRAFT", "NEEDS_INPUT", "READY", "HANDED_OFF"]),
   requirementIds: z.array(z.string()),
   dependencyIds: z.array(z.string()),
   knowledgeReferenceIds: z.array(z.string()),
 });
 
+export const AcceptanceTargetType = z.enum([
+  "REQUIREMENT",
+  "WORK_PACKAGE",
+  "DELIVERY_SUBJECT",
+]);
+
 export const AcceptanceCriterionSchema = z.object({
   id: z.string(),
-  requirementId: z.string(),
+  deliverySubjectId: z.string(),
+  targetType: AcceptanceTargetType,
+  targetId: z.string(),
+  targetRevision: z.number().int().positive().optional(),
   given: z.string().optional(),
   when: z.string().optional(),
   then: z.string().min(1),
@@ -256,12 +428,15 @@ export const AcceptanceCriterionSchema = z.object({
     "OTHER",
   ]),
   automatable: z.boolean(),
-  priority: Criticality,
+  priority: Priority,
 });
 
 export const EvaluationSchema = z.object({
   id: z.string(),
-  requirementId: z.string(),
+  deliverySubjectId: z.string(),
+  targetType: AcceptanceTargetType,
+  targetId: z.string(),
+  targetRevision: z.number().int().positive().optional(),
   name: z.string(),
   evaluationType: z.enum([
     "DETERMINISTIC_TEST",
@@ -291,10 +466,31 @@ export const DependencySchema = z.object({
   blocking: z.boolean().default(false),
 });
 
+export const TaskType = z.enum([
+  "DRILL",
+  "VERIFY",
+  "REVIEW",
+  "RESOLVE_CONFLICT",
+  "FILL_GAP",
+  "DECIDE",
+  "FOLLOW_UP",
+  "FINAL_REVIEW",
+]);
+
+export const TaskStatus = z.enum([
+  "OPEN",
+  "IN_PROGRESS",
+  "ANSWERED",
+  "PROCESSING",
+  "WAITING_ON_OTHER",
+  "COMPLETED",
+  "CANCELLED",
+]);
+
 export const TaskSchema = z.object({
   id: z.string(),
   deliverySubjectId: z.string(),
-  type: z.enum(["DRILL", "VERIFY", "REVIEW", "RESOLVE_CONFLICT", "FILL_GAP", "FINAL_REVIEW"]),
+  type: TaskType,
   assigneeId: z.string().optional(),
   perspectiveId: z.string().optional(),
   title: z.string(),
@@ -302,22 +498,31 @@ export const TaskSchema = z.object({
   rationale: z.string().optional(),
   priority: z.number(),
   blocking: z.boolean(),
-  status: z.enum(["OPEN", "WAITING", "ANSWERED", "COMPLETED", "CANCELLED"]),
+  status: TaskStatus,
   relatedObjectIds: z.array(z.string()),
 });
 
 export type DeliverySubject = z.infer<typeof DeliverySubjectSchema>;
+export type DeliverySubjectMembership = z.infer<typeof DeliverySubjectMembershipSchema>;
 export type Perspective = z.infer<typeof PerspectiveSchema>;
 export type PerspectiveAssignment = z.infer<typeof PerspectiveAssignmentSchema>;
 export type UserProfile = z.infer<typeof UserProfileSchema>;
 export type RoleTemplate = z.infer<typeof RoleTemplateSchema>;
 export type PerspectiveTemplate = z.infer<typeof PerspectiveTemplateSchema>;
+export type Evidence = z.infer<typeof EvidenceSchema>;
+export type SourceArtifact = z.infer<typeof SourceArtifactSchema>;
 export type Contribution = z.infer<typeof ContributionSchema>;
+export type Verification = z.infer<typeof VerificationSchema>;
+export type KnowledgeReference = z.infer<typeof KnowledgeReferenceSchema>;
+export type ProposedDiff = z.infer<typeof ProposedDiffSchema>;
 export type Requirement = z.infer<typeof RequirementSchema>;
+export type RequirementRevision = z.infer<typeof RequirementRevisionSchema>;
 export type RequirementSource = z.infer<typeof RequirementSourceSchema>;
 export type Gap = z.infer<typeof GapSchema>;
 export type Conflict = z.infer<typeof ConflictSchema>;
+export type ConflictPosition = z.infer<typeof ConflictPositionSchema>;
 export type Assumption = z.infer<typeof AssumptionSchema>;
+export type Decision = z.infer<typeof DecisionSchema>;
 export type WorkPackage = z.infer<typeof WorkPackageSchema>;
 export type AcceptanceCriterion = z.infer<typeof AcceptanceCriterionSchema>;
 export type Evaluation = z.infer<typeof EvaluationSchema>;
