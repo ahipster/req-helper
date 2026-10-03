@@ -1,6 +1,6 @@
 # BPMN-Style Workflow
 
-This is the logical business process for the PoC. The initial implementation may execute it with LangGraph plus deterministic application services rather than a BPMN engine.
+This is the logical business process for the PoC. The implementation uses persisted Firestore tasks/state plus a deterministic application controller; OpenCode performs bounded reasoning/tool work. No generic workflow engine is required.
 
 ## End-to-end process
 
@@ -17,7 +17,7 @@ This is the logical business process for the PoC. The initial implementation may
 [Retrieve related enterprise knowledge]
    |
    v
-[AI proposes impacts + perspectives]
+[OpenCode proposes impacts + perspectives]
    |
    v
 [Human confirms perspective set]
@@ -31,22 +31,22 @@ This is the logical business process for the PoC. The initial implementation may
 [Assign owner/delegate/contributors]                  |
    |                                                  |
    v                                                  |
-[Generate targeted drill task]                        |
+[Create targeted drill task]                          |
    |                                                  |
    v                                                  |
 (User Task: answer / don't know / nominate expert)    |
    |                                                  |
    v                                                  |
-[Extract contributions + epistemic metadata]          |
+[OpenCode extracts contributions + epistemic data]    |
    |                                                  |
    v                                                  |
-[Propose requirement mutations]                       |
+[OpenCode proposes requirement commands]              |
    |                                                  |
    v                                                  |
-[Validate schema + domain invariants]                  |
+[Validate schema + domain invariants + revision]       |
    |                                                  |
    v                                                  |
-[Persist requirements + provenance + audit event]     |
+[Firestore transaction: state + provenance + event]   |
    |                                                  |
    v                                                  |
 [Assess perspective confidence/coverage]              |
@@ -116,28 +116,34 @@ This is the logical business process for the PoC. The initial implementation may
 
 ## Human interaction subprocess
 
-Every human task follows the same pattern:
+Every human wait is represented by a durable Firestore Task, not suspended in-memory workflow state.
 
 ```text
 [Task created]
    |
    v
+[Relevant user's realtime UI receives task]
+   |
+   v
 [Render why this matters + condensed context]
    |
    v
-<User response>
+<User response]
    |
    +-- "I don't know" --------> [Capture unknown + route/replan]
    |
    +-- "Ask someone" ---------> [Capture suggested expert + create task]
    |
-   +-- substantive answer -----> [Persist raw message]
+   +-- substantive answer -----> [Persist raw message/answer]
                                    |
                                    v
-                                [Extract contribution(s)]
+                           [Acquire AgentThread lease]
                                    |
                                    v
-                                [Show interpreted structured change]
+                       [OpenCode extracts contribution(s)]
+                                   |
+                                   v
+                         [Validate/apply domain command]
                                    |
                                    v
                          <Needs explicit verification?>
@@ -146,19 +152,21 @@ Every human task follows the same pattern:
                        [Owner review task]   [Continue]
 ```
 
+Each participant/perspective interaction has its own logical AgentThread. Multiple AgentThreads may proceed in parallel against the same Delivery Subject.
+
 ## Conflict-resolution subprocess
 
 ```text
 [Conflict detected]
    |
    v
-[Identify affected owners/perspectives]
+[Persist Conflict + identify owners/perspectives]
    |
    v
 [Build evidence bundle]
    |
    v
-[AI frames disagreement + possible options]
+[OpenCode frames disagreement + possible options]
    |
    v
 (User discussion / review)
@@ -186,7 +194,7 @@ Every human task follows the same pattern:
 [Relevant artifact linked]
    |
    v
-[Compare current artifact understanding vs proposed requirements]
+[Compare current understanding vs proposed requirements]
    |
    v
 [Propose ADD/MODIFY/REMOVE/DEPRECATE/UNKNOWN_CHANGE]
@@ -202,7 +210,7 @@ No write-back to source repositories occurs in the PoC.
 
 ## Readiness subprocess
 
-Readiness is deterministic application code.
+Readiness is deterministic application code over authoritative Firestore state.
 
 ```text
 [Load persisted domain state]
@@ -235,17 +243,19 @@ Any active state may move back to DRILLING/RESOLVING when new evidence invalidat
 CANCELLED is terminal.
 ```
 
-## PoC simplification
+## PoC execution loop
 
-For the first working vertical slice, implement one durable loop:
+The smallest durable loop is:
 
 ```text
-PLAN DRILL
- -> HUMAN INTERRUPT
- -> EXTRACT CONTRIBUTIONS
- -> SYNTHESIZE REQUIREMENTS
+CREATE TASK
+ -> HUMAN ANSWER
+ -> ACQUIRE AGENT THREAD LEASE
+ -> OPENCODE EXTRACT/SYNTHESIZE
+ -> VALIDATE STRUCTURED COMMAND
+ -> FIRESTORE TRANSACTION
  -> ASSESS GAPS/CONFLICTS
- -> PLAN DRILL ...
+ -> CREATE NEXT TASK(S)
 ```
 
-After the loop is stable, append splitting, acceptance/evals and readiness as mostly deterministic/generative post-processing steps.
+There is no suspended graph checkpoint. Waiting is represented by persisted tasks. If OpenCode loses its session, the backend creates a new one and reconstructs relevant context from Firestore.
