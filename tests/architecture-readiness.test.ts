@@ -283,7 +283,7 @@ describe("architecture-aware readiness", () => {
       evaluations: evaluations.filter((evaluation) => evaluation.targetId === requirement.id),
       architecturePolicy: coveragePolicy,
       architectureContext: context,
-      architectureElements: candidates.map(confirmedElement),
+      architectureElements: candidates.map((stableKey) => confirmedElement(stableKey)),
       architectureImpacts: [impactFor(requirement.id, requirement.revision, "app.api")],
       architectureImpactAssessments: [assessmentFor(requirement.id, requirement.revision, candidates)],
     });
