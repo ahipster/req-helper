@@ -15,6 +15,11 @@ const app =
 
 export const firestore = getFirestore(app);
 
+export const usersCollection = (db: Firestore = firestore) => db.collection("users");
+export const roleTemplatesCollection = (db: Firestore = firestore) => db.collection("roleTemplates");
+export const perspectiveTemplatesCollection = (db: Firestore = firestore) =>
+  db.collection("perspectiveTemplates");
+
 export const subjectRef = (db: Firestore, subjectId: string) =>
   db.collection("deliverySubjects").doc(subjectId);
 
@@ -123,6 +128,7 @@ export async function acquireThreadLease({
         status: "RUNNING",
         leaseOwner,
         leaseExpiresAt: Timestamp.fromMillis(now.toMillis() + ttlMs),
+        sessionGeneration: snapshot.exists ? Number(snapshot.get("sessionGeneration") ?? 0) : 0,
         updatedAt: FieldValue.serverTimestamp(),
         ...(snapshot.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
       },
@@ -150,4 +156,77 @@ export async function releaseThreadLease(
       updatedAt: FieldValue.serverTimestamp(),
     });
   });
+}
+
+export type UpdateThreadSessionInput = {
+  subjectId: string;
+  threadId: string;
+  opencodeSessionId: string;
+  sessionGeneration: number;
+};
+
+/**
+ * Persists the recoverable OpenCode session mapping. This does not make
+ * OpenCode state authoritative; it is only a continuity optimization.
+ */
+export async function updateThreadSession({
+  subjectId,
+  threadId,
+  opencodeSessionId,
+  sessionGeneration,
+}: UpdateThreadSessionInput): Promise<void> {
+  const ref = subjectCollection(firestore, subjectId, "agentThreads").doc(threadId);
+  await ref.set(
+    {
+      opencodeSessionId,
+      sessionGeneration,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+export async function markThreadContextSynced(
+  subjectId: string,
+  threadId: string,
+  domainRevision: number,
+  runId: string,
+): Promise<void> {
+  const ref = subjectCollection(firestore, subjectId, "agentThreads").doc(threadId);
+  await ref.set(
+    {
+      lastContextRevision: domainRevision,
+      lastRunId: runId,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+export type PersistMessageInput = {
+  subjectId: string;
+  threadId: string;
+  runId?: string;
+  actorType: "HUMAN" | "ASSISTANT" | "SYSTEM" | "TOOL";
+  actorId?: string;
+  content: string;
+  relatedObjectIds?: string[];
+};
+
+/**
+ * User-visible message history is persisted in Firestore so it survives loss
+ * of OpenCode local session state. Messages are not authoritative requirements.
+ */
+export async function persistThreadMessage(input: PersistMessageInput): Promise<string> {
+  const ref = subjectCollection(firestore, input.subjectId, "messages").doc();
+  await ref.create({
+    threadId: input.threadId,
+    runId: input.runId,
+    actorType: input.actorType,
+    actorId: input.actorId,
+    content: input.content,
+    relatedObjectIds: input.relatedObjectIds ?? [],
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  return ref.id;
 }
