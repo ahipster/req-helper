@@ -25,10 +25,11 @@ By end of week, one seeded signal must support:
 15. define requirement/package/subject acceptance criteria and evals;
 16. compute deterministic readiness;
 17. show realtime changes to other authorized users;
-18. recover from OpenCode session loss/staleness;
-19. expose normal-user requirement history;
-20. expose JSON/Markdown export and read-only package APIs;
-21. expose war-room run/context diagnostics.
+18. maintain a private realtime My Work task projection without weakening subject isolation;
+19. recover from OpenCode session loss/staleness;
+20. expose normal-user requirement history;
+21. expose JSON/Markdown export and read-only package APIs;
+22. expose war-room run/context diagnostics.
 
 ## Day 1 — Canonical domain + Firestore spine
 
@@ -60,7 +61,9 @@ By end of week, one seeded signal must support:
 
 ### Deliverables
 
-- My Work;
+- My Work backed by `users/{uid}/taskInbox` read projection;
+- projection upsert/delete service driven by authoritative Task assignment/status;
+- projection cleanup when subject access is removed;
 - New Signal + Clarify Scope;
 - Delivery Overview;
 - member/assignment management;
@@ -72,6 +75,9 @@ By end of week, one seeded signal must support:
 ### Acceptance
 
 - two users on same subject receive live structured updates;
+- My Work updates live without a cross-subject browser Task query;
+- opening an inbox item reloads/re-authorizes the authoritative task/subject;
+- removing membership removes that subject's inbox items for the user;
 - a non-member cannot read subject data;
 - a WAR_ROOM_OPERATOR without Delivery Lead/Admin rights cannot change assignments;
 - reviewer UI is visibly advisory;
@@ -152,6 +158,7 @@ By end of week, one seeded signal must support:
 
 - generalized AcceptanceCriterion target type;
 - generalized Evaluation target type;
+- mandatory `targetRevision` for Requirement-targeted acceptance/evals;
 - deterministic readiness complete;
 - Readiness screen;
 - Final Package;
@@ -164,6 +171,7 @@ By end of week, one seeded signal must support:
 - all required perspectives must be confirmed and owned;
 - current-revision verification/provenance enforced;
 - blocking gaps/conflicts/assumptions/dependencies/tasks block READY;
+- requirement revision N+1 cannot reuse requirement-level acceptance/eval from N;
 - package acceptance can span multiple requirements;
 - package API is generated from persisted state, not one final free-form prompt.
 
@@ -192,20 +200,21 @@ By end of week, one seeded signal must support:
 ## Canonical rules coding agents must not reinterpret
 
 1. Firestore is system of record.
-2. `contextRevisionPresented` means what OpenCode actually saw, not latest domain state.
-3. Membership controls subject access; assignment controls perspective authority.
-4. Reviewer is advisory.
-5. Requiredness belongs to Perspective, not Assignment.
-6. Task enum/state machine is exactly the canonical schema.
-7. Conflict is N-party.
-8. Requirement provenance is first-class RequirementSource.
-9. Verification is immutable/current-revision specific.
-10. Human and AI requirement edits use the same revision service.
-11. `blocking=true` dependency must be resolved before READY.
-12. WorkPackage target implementation area is separate from human coordinator.
-13. Acceptance/evals can target Requirement, WorkPackage or DeliverySubject.
-14. `priority` is urgency; `criticality` is consequence-if-wrong.
-15. large source files live outside Firestore.
+2. `users/{uid}/taskInbox` is a rebuildable read projection, never task truth.
+3. `contextRevisionPresented` means what OpenCode actually saw, not latest domain state.
+4. Membership controls subject access; assignment controls perspective authority.
+5. Reviewer is advisory.
+6. Requiredness belongs to Perspective, not Assignment.
+7. Task enum/state machine is exactly the canonical schema.
+8. Conflict is N-party.
+9. Requirement provenance is first-class RequirementSource.
+10. Verification is append-only/current-revision specific.
+11. Human and AI requirement edits use the same revision service.
+12. `blocking=true` dependency must be resolved before READY.
+13. WorkPackage target implementation area is separate from human coordinator.
+14. Acceptance/evals can target Requirement, WorkPackage or DeliverySubject; Requirement targets require `targetRevision`.
+15. `priority` is urgency; `criticality` is consequence-if-wrong.
+16. large source files live outside Firestore.
 
 ## Firestore-specific rules
 
@@ -215,6 +224,7 @@ By end of week, one seeded signal must support:
 - deterministic IDs/idempotency keys for AI mutations;
 - narrow realtime subscriptions;
 - membership-aware security rules;
+- private per-user taskInbox projection for cross-subject My Work;
 - append-only events for meaningful mutations.
 
 ## OpenCode-specific rules
@@ -236,7 +246,7 @@ By end of week, one seeded signal must support:
 - [ ] Membership/access
 - [ ] Perspective + assignment
 - [ ] Admin UI
-- [ ] Task inbox/state machine
+- [ ] authoritative Task + private taskInbox projection/state machine
 - [ ] realtime subscriptions/security rules
 - [ ] Drill Workspace
 - [ ] assistant-ui integration
@@ -250,24 +260,10 @@ By end of week, one seeded signal must support:
 - [ ] N-party conflicts/decisions
 - [ ] KnowledgeProvider/ProposedDiff
 - [ ] WorkPackages/target area/dependencies
-- [ ] generalized acceptance/evals
+- [ ] generalized revision-aware acceptance/evals
 - [ ] deterministic readiness
 - [ ] requirement history
 - [ ] package export/read APIs
 - [ ] war-room traces
 - [ ] recovery/idempotency/concurrency tests
 - [ ] Cloud Run deployment
-
-## P1 only after vertical slice
-
-- true delta context hydration;
-- semantic retrieval/embeddings;
-- notifications/escalation;
-- real enterprise directory sync;
-- richer diff visualizations;
-- approval workflow;
-- analytics warehouse projection.
-
-## Coding-agent instruction
-
-Every day ends with a runnable vertical path. When docs and code disagree, `src/domain/schemas.ts` + `docs/DOMAIN_MODEL.md` are canonical; fix the conflicting artifact rather than inventing a third interpretation.
