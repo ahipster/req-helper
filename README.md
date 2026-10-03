@@ -78,6 +78,8 @@ deliverySubjectId + perspectiveId + participantId
 
 Several humans never write concurrently into one OpenCode session. Threads converge through validated Firestore domain records and authorized realtime listeners.
 
+`My Work` does not run a broad browser collection-group query across all Delivery Subjects. The backend maintains a private non-authoritative `users/{uid}/taskInbox` projection so the inbox remains realtime while subject data stays protected by per-subject membership.
+
 ## OpenCode state synchronization
 
 OpenCode local state is disposable. There is no wholesale replication of its local DB/disk into Firestore.
@@ -103,6 +105,7 @@ persist human answer
 
 ```text
 users/{userId}
+  /taskInbox
 roleTemplates/{roleTemplateId}
 perspectiveTemplates/{perspectiveTemplateId}
 
@@ -141,12 +144,12 @@ See `docs/FIRESTORE_MODEL.md`.
 - `priority` = delivery urgency/sequencing.
 - `criticality` = consequence if wrong/omitted.
 - Requiredness belongs to Perspective, not Assignment.
-- Verification is immutable and requirement-revision specific.
+- Verification is append-only and requirement-revision specific.
 - Requirement provenance is first-class `RequirementSource` data.
 - Conflict supports 2+ structured positions.
 - `blocking=true` dependency must be resolved before READY; ownership alone does not clear it.
 - WorkPackage identifies `targetAreaRef`; team/coordinator are separate.
-- Acceptance/evals may target Requirement, WorkPackage or DeliverySubject.
+- Acceptance/evals may target Requirement, WorkPackage or DeliverySubject; Requirement targets are revision-bound.
 
 ## P0 boundary
 
@@ -157,6 +160,7 @@ In scope:
 - admin/user/perspective setup;
 - perspective assignments/authority;
 - realtime multi-user drills;
+- private realtime My Work projection;
 - OpenCode session recovery/context refresh;
 - Contribution/Evidence/Verification;
 - RequirementRevision/RequirementSource;
