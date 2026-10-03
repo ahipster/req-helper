@@ -28,6 +28,33 @@
       ]
     },
     {
+      "collectionGroup": "requirementRevisions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "requirementId", "order": "ASCENDING" },
+        { "fieldPath": "revision", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "requirementSources",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "requirementId", "order": "ASCENDING" },
+        { "fieldPath": "requirementRevision", "order": "ASCENDING" },
+        { "fieldPath": "authoritative", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "verifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "targetType", "order": "ASCENDING" },
+        { "fieldPath": "targetId", "order": "ASCENDING" },
+        { "fieldPath": "targetRevision", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "conflicts",
       "queryScope": "COLLECTION",
       "fields": [
