@@ -18,6 +18,15 @@ export const architectureIngestionRunsCollection = (db: Firestore = architecture
 export const architectureBaselinesCollection = (db: Firestore = architectureFirestore) =>
   db.collection("architectureBaselines");
 
+export const architectureTraversalPoliciesCollection = (
+  db: Firestore = architectureFirestore,
+) => db.collection("architectureTraversalPolicies");
+
+export const architectureTraversalPolicyVersionsCollection = (
+  policyId: string,
+  db: Firestore = architectureFirestore,
+) => architectureTraversalPoliciesCollection(db).doc(policyId).collection("versions");
+
 export const architectureBaselineCollection = (
   baselineId: string,
   name: "elements" | "relationships" | "views" | "ingestionFindings",
@@ -29,6 +38,7 @@ export const subjectArchitectureCollection = (
   name:
     | "architectureContext"
     | "architectureImpacts"
+    | "architectureImpactAssessments"
     | "architectureChangeProposals"
     | "workPackageImplementationTargets",
   db: Firestore = architectureFirestore,
