@@ -2,97 +2,100 @@
 
 ## 1. Architectural style
 
-Use a **modular monolith** for the PoC. Separate domain modules and adapter boundaries in code, but deploy one application plus PostgreSQL unless the bank environment already provides a separate LangGraph runtime.
+Use a **modular monolith** for Req Helper itself and treat OpenCode as an external/embedded execution harness behind a narrow adapter.
 
-The architecture deliberately separates three kinds of state:
+The PoC separates four kinds of state:
 
-1. **Domain state** — authoritative business facts persisted in PostgreSQL.
-2. **Conversation state** — messages/transcripts used for interaction and audit.
-3. **Orchestration state** — temporary/checkpointed execution state used to resume AI workflows.
+1. **Domain state** — authoritative business facts persisted in Cloud Firestore.
+2. **Conversation state** — user/thread messages persisted for continuity and audit.
+3. **Harness/session state** — OpenCode session identifiers and transient execution context.
+4. **UI subscription state** — realtime snapshots used by browsers.
 
-Only domain state determines readiness and final handoff.
+Only Firestore domain state determines readiness and final handoff. OpenCode sessions are replaceable execution context.
 
-## 2. Logical components
+## 2. Target GCP topology
 
 ```text
 ┌───────────────────────────────────────────────────────────────────────┐
-│ Browser / Next.js                                                    │
+│ Browser                                                               │
+│ Next.js / React + assistant-ui                                       │
 │                                                                       │
-│ My Work | Delivery | Drill | Requirements | Impacts | Work Packages │
-│ Readiness | Final Package | War Room                                 │
+│ My Work | Delivery | Drill | Requirements | Impacts | Readiness      │
 └──────────────────────────────┬────────────────────────────────────────┘
-                               │ HTTPS/SSE
+                               │ HTTPS + Firestore listeners
                                ▼
 ┌───────────────────────────────────────────────────────────────────────┐
-│ Application/API                                                       │
+│ Req Helper Web/API - Cloud Run                                       │
 │                                                                       │
-│ Auth context                                                          │
-│ DeliverySubject service                                              │
-│ Requirement service                                                  │
-│ Contribution/verification service                                    │
-│ Decision/conflict/gap service                                        │
-│ Knowledge-link service                                               │
-│ Work-package service                                                 │
-│ Readiness evaluator                                                  │
-│ Export service                                                       │
+│ auth/identity context                                                 │
+│ domain command services                                               │
+│ deterministic workflow controller                                    │
+│ context builder                                                       │
+│ readiness evaluator                                                   │
+│ export service                                                        │
+│ war-room trace service                                                │
 └───────────────┬────────────────────────────┬──────────────────────────┘
                 │                            │
                 ▼                            ▼
-┌──────────────────────────┐      ┌───────────────────────────────────┐
-│ PostgreSQL               │      │ Orchestration                    │
-│                          │      │ LangGraph                         │
-│ authoritative domain     │◄────►│ drill/extract/update/assess loop │
-│ audit events             │      │ interrupts + checkpoints         │
-│ conversation records     │      └───────────────┬───────────────────┘
+┌──────────────────────────┐      ┌────────────────────────────────────┐
+│ Cloud Firestore          │      │ OpenCodeHarness                   │
+│ authoritative state      │      │ SDK/server adapter                │
+│ conversations            │      │ one session per interaction thread│
+│ audit/events             │      └───────────────┬────────────────────┘
 └───────────────┬──────────┘                      │
                 │                                 ▼
-                │                      ┌──────────────────────────────┐
-                │                      │ Model Gateway                │
-                │                      │ structured generation       │
-                │                      │ streaming                    │
-                │                      └──────────────────────────────┘
-                │
+                │                      ┌───────────────────────────────┐
+                │                      │ Vertex AI / Model Garden      │
+                │                      │ Gemini / approved models      │
+                │                      └───────────────────────────────┘
                 ▼
 ┌───────────────────────────────────────────────────────────────────────┐
-│ Adapter layer                                                         │
-│                                                                       │
-│ KnowledgeProvider: MCP | REST | SQL | Search | Files | Repositories  │
-│ IdentityProvider                                                      │
-│ NotificationProvider (future)                                        │
+│ Enterprise adapter layer                                              │
+│ MCP | REST | APIs | Search | Files | Repositories                    │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-## 3. Frontend
+## 3. Why Firestore for the PoC
+
+The war-room use case is inherently collaborative: multiple people can answer separate perspective drills while delivery leads observe the same Delivery Subject changing.
+
+Firestore provides:
+- realtime document/query listeners to browsers;
+- optimistic/offline-friendly client behavior where useful;
+- atomic transactions/batched writes for invariant-sensitive mutations;
+- server-side IAM and client-side security rules;
+- no custom WebSocket or Redis layer for the PoC.
+
+The trade-off is weaker relational ergonomics. Mitigate that by using IDs, bounded subcollections, denormalized read summaries, and deterministic application services rather than giant nested aggregate documents.
+
+## 4. Frontend
 
 Recommended:
 - Next.js + React + TypeScript;
-- assistant-ui as the composable conversation surface;
-- shadcn/ui or equivalent design primitives;
-- SSE or compatible streaming transport;
-- server-rendered data where useful, client state only for transient interaction.
+- assistant-ui for the conversational surface;
+- shadcn/ui or equivalent primitives;
+- Firestore client listeners for shared state that should update live;
+- normal API calls for privileged/validated mutations;
+- avoid direct client writes to sensitive domain collections unless security rules and invariants are trivial.
 
-assistant-ui should not own the product data model. Build custom panels around it for task focus, requirement/evidence state, impacts, conflicts, and readiness.
+assistant-ui owns interaction rendering, not product state.
 
-### Core navigation
+### Session/thread rule
+
+A chat thread maps to an application-level AgentThread, not directly to a global Delivery Subject.
+
+Default thread key:
 
 ```text
-/my-work
-/delivery/new
-/delivery/:id
-/delivery/:id/drill/:taskId
-/delivery/:id/requirements
-/delivery/:id/conflicts
-/delivery/:id/impacts
-/delivery/:id/work-packages
-/delivery/:id/readiness
-/delivery/:id/package
-/war-room/:id
+deliverySubjectId + perspectiveId + participantId
 ```
 
-## 4. Backend/domain modules
+This prevents concurrent humans from racing on one OpenCode session while still sharing the same Firestore domain state.
+
+## 5. Backend/domain modules
 
 ### DeliverySubjectModule
-Lifecycle, scope, outcome, status.
+Lifecycle, scope, outcome and status.
 
 ### PerspectiveModule
 Perspective catalogue, assignments and coverage.
@@ -101,128 +104,192 @@ Perspective catalogue, assignments and coverage.
 Human statements, provenance, confidence, epistemic mode and verification.
 
 ### RequirementModule
-Structured requirement lifecycle, versioning, provenance and relationships.
+Requirement lifecycle, revisions, provenance and relationships.
 
 ### ResolutionModule
-Gaps, assumptions, conflicts, decisions and tasks.
+Gaps, assumptions, conflicts, decisions and follow-up tasks.
 
 ### KnowledgeModule
-References to external enterprise knowledge plus proposed diffs.
+References to enterprise knowledge and proposed diffs.
 
 ### WorkPackageModule
 Area split, dependencies, acceptance criteria and evals.
 
 ### ReadinessModule
-Pure/deterministic readiness checks over persisted state.
+Pure/deterministic checks over Firestore-backed snapshots.
+
+### AgentThreadModule
+Maps UI threads to OpenCode sessions, tracks lifecycle, lease/busy state and last context revision.
 
 ### AuditModule
-Append-only domain events and orchestration traces.
+Append-only events and agent-run traces.
 
-## 5. AI/orchestration boundary
+## 6. OpenCode harness boundary
 
-The orchestration layer must invoke domain application services rather than mutate persistence directly.
+OpenCode replaces LangGraph as the agent execution harness for the PoC.
 
-A node follows:
+Req Helper owns sequencing and durable state. OpenCode performs bounded reasoning/tool work.
 
-```text
-load authoritative context
-  -> build bounded context envelope
-  -> call model/tool
-  -> validate structured result
-  -> create proposed domain commands
-  -> validate invariants
-  -> persist mutations + audit event
-  -> determine next workflow transition
+```ts
+export interface AgentHarness {
+  ensureThread(input: EnsureThreadInput): Promise<AgentThreadHandle>;
+  prompt<T>(input: HarnessPrompt<T>): Promise<HarnessResult<T>>;
+  stream(input: HarnessStreamPrompt): AsyncIterable<HarnessEvent>;
+  cancel(runId: string): Promise<void>;
+}
 ```
 
-### Minimal graph
+The OpenCode adapter may use `@opencode-ai/sdk` against either an embedded instance or a separately deployed server.
+
+### Required behavior
+
+- store `opencodeSessionId` only as recoverable metadata;
+- if the session is missing, recreate it and hydrate from Firestore context;
+- never rely on OpenCode transcript/session DB as the authoritative requirement store;
+- serialize prompts per AgentThread;
+- validate every structured result before applying a domain command;
+- persist model/provider/session/run metadata for war-room inspection.
+
+## 7. Deterministic workflow controller
+
+Do not replace LangGraph with another generic workflow engine.
+
+Use ordinary application state and task records:
 
 ```text
-START
-  |
-  v
-clarify_signal
-  |
-retrieve_knowledge
-  |
-identify_perspectives
-  |
-plan_drill
-  |
-ask_human  <-----------------------------+
-  |                                       |
-  v                                       |
-extract_contributions                     |
-  |                                       |
-synthesize_requirements                   |
-  |                                       |
-assess_gaps_conflicts                     |
-  |                                       |
-  +-- needs more human input? -- YES -----+
-  |
-  NO
-  v
-split_work_packages
-  |
-generate_acceptance_and_evals
-  |
-evaluate_readiness
-  |
-  +-- blocked? -> create targeted tasks -> plan_drill
-  |
- READY
-  v
-END
+create signal
+  -> clarify signal
+  -> identify perspectives
+  -> create perspective tasks
+  -> participant drill thread
+  -> record human answer
+  -> OpenCode extracts contributions
+  -> validated domain mutation
+  -> OpenCode proposes requirements/gaps/conflicts
+  -> validated domain mutation
+  -> create follow-up tasks as needed
+  -> converge
+  -> work-package split
+  -> acceptance criteria/evals
+  -> deterministic readiness
 ```
 
-Only `ask_human` should require a durable human interrupt in the first implementation. Additional approval interrupts can be added after the vertical slice works.
+Human waiting is represented by persisted Task state, not suspended process memory.
 
-## 6. Context engineering
+## 8. Context engineering
 
-Never place the entire Delivery Subject or enterprise corpus into every prompt.
-
-Build a node-specific context envelope containing only:
+Every OpenCode invocation receives a bounded context envelope reconstructed from Firestore and enterprise adapters.
 
 ```ts
 type ContextEnvelope = {
-  deliverySummary: string;
+  deliverySubject: DeliverySubjectSummary;
+  thread: AgentThreadSummary;
   currentPerspective?: PerspectiveSummary;
   currentTask?: TaskSummary;
   relevantRequirements: RequirementSummary[];
   relevantContributions: ContributionSummary[];
   relevantDecisions: DecisionSummary[];
   relevantKnowledge: KnowledgeReferenceSummary[];
-  dependencies: DependencySummary[];
   openIssues: IssueSummary[];
+  domainRevision: number;
 };
 ```
 
-Every included item must carry stable IDs so model output can reference domain objects without copying them.
+Stable IDs are mandatory so the harness can propose commands without copying whole objects.
 
-## 7. LLM gateway
+## 9. Firestore persistence model
 
-Internal interface:
+See `docs/FIRESTORE_MODEL.md` for the complete model.
 
-```ts
-export interface ModelGateway {
-  generateText(input: TextGenerationRequest): Promise<TextGenerationResult>;
-  generateStructured<T>(input: StructuredGenerationRequest<T>): Promise<T>;
-  streamText(input: TextGenerationRequest): AsyncIterable<string>;
-}
+Top-level pattern:
+
+```text
+deliverySubjects/{subjectId}
+  /perspectives
+  /assignments
+  /tasks
+  /contributions
+  /requirements
+  /conflicts
+  /gaps
+  /assumptions
+  /decisions
+  /knowledgeRefs
+  /impacts
+  /workPackages
+  /events
+  /agentThreads
+  /agentRuns
 ```
 
-Provider-specific SDKs must stay behind this interface.
+Use subcollections for unbounded/growing lists. The parent Delivery Subject document contains only summary/state fields needed frequently by overview screens.
 
-For structured generation:
-- use Zod/JSON Schema;
-- reject invalid enum/ID references;
-- retry only bounded schema failures;
-- never silently coerce semantic contradictions;
-- store model/provider/prompt-version metadata with each run.
+### Concurrency
 
-## 8. Knowledge adapter boundary
+For mutations that depend on current state:
+- use Firestore transactions;
+- maintain `revision` or `updatedAt` fields;
+- reject/retry stale commands where semantic conflicts matter;
+- use deterministic IDs or idempotency keys for AI-proposed mutations;
+- do not allow reruns to blindly duplicate requirements/events.
 
-Do not make MCP the internal object model.
+For agent threads:
+- one active run per thread;
+- use a short Firestore lease/busy marker with expiry;
+- separate threads may execute concurrently against the same Delivery Subject;
+- every command re-reads authoritative state before applying changes.
+
+## 10. Realtime collaboration
+
+Browsers subscribe to only the slices they need.
+
+Examples:
+- participant Drill Workspace: current task, relevant requirements, thread messages, blocking conflicts;
+- Delivery Lead: subject summary, perspective status, tasks, blockers and readiness;
+- War Room: agentRuns, events and open tasks.
+
+Do not subscribe every user to every subcollection.
+
+A human answer flows as:
+
+```text
+Alice UI -> API -> task/contribution write -> Firestore
+                                      |
+                                      +-> listeners update Bob/Lead views
+                                      +-> backend invokes OpenCode
+                                      +-> validated AI mutations -> Firestore
+                                      +-> listeners update all relevant views
+```
+
+## 11. Authentication and authorization
+
+PoC options:
+- use existing enterprise identity if readily available;
+- otherwise Firebase Authentication / Identity Platform or explicit named PoC personas.
+
+Keep authorization separate from perspective ownership.
+
+For production direction:
+- browser reads constrained by security rules;
+- privileged domain mutations through Cloud Run service account;
+- enterprise integrations use workload identity/service accounts;
+- OpenCode/Vertex credentials never reach the browser.
+
+## 12. Vertex AI / Model Garden
+
+OpenCode is configured with the `google-vertex` provider. Prefer Application Default Credentials/workload identity on GCP.
+
+Configuration is environment-driven so approved models can change without product-code changes.
+
+The application records:
+- logical model role;
+- actual provider/model;
+- region;
+- prompt/skill version;
+- OpenCode session/run IDs;
+- latency and errors.
+
+## 13. Enterprise knowledge adapter boundary
 
 ```ts
 export interface KnowledgeProvider {
@@ -235,164 +302,77 @@ export interface KnowledgeProvider {
 Possible implementations:
 - MCPKnowledgeProvider;
 - RestKnowledgeProvider;
-- SqlKnowledgeProvider;
+- SearchKnowledgeProvider;
 - RepositoryKnowledgeProvider;
-- SeedKnowledgeProvider for PoC.
+- SeedKnowledgeProvider.
 
-All returned knowledge must identify source system, external ID/URI, version if available, retrieval timestamp and source type.
+MCP remains an integration boundary, not the internal data model.
 
-## 9. MCP strategy
+## 14. Audit/event model
 
-For PoC:
-- use MCP only when a real source is already exposed through MCP;
-- otherwise use direct adapters;
-- expose Req Helper through MCP later for downstream SDLC consumers if useful.
+Every meaningful mutation writes an append-only event under the Delivery Subject.
 
-Candidate downstream tools:
-- `get_delivery_subject`;
-- `search_requirements`;
-- `get_work_package`;
-- `get_traceability`;
-- `record_contribution`;
-- `record_decision`.
+Examples:
+- DeliverySubjectCreated;
+- PerspectiveAssigned;
+- HumanAnswerRecorded;
+- ContributionExtracted;
+- ContributionVerified;
+- RequirementCreated/Revised;
+- GapDetected;
+- ConflictDetected;
+- DecisionRecorded;
+- KnowledgeLinked;
+- WorkPackageCreated;
+- ReadinessChanged.
 
-## 10. Persistence
+This is not event sourcing. Current Firestore documents remain authoritative.
 
-PostgreSQL is the system of record.
+## 15. Agent-run observability
 
-Recommended relational tables:
-- delivery_subject;
-- perspective;
-- perspective_assignment;
-- contribution;
-- contribution_evidence;
-- contribution_verification;
-- requirement;
-- requirement_revision;
-- requirement_source;
-- knowledge_reference;
-- proposed_diff;
-- gap;
-- conflict;
-- decision;
-- assumption;
-- work_package;
-- work_package_requirement;
-- acceptance_criterion;
-- evaluation;
-- dependency;
-- task;
-- conversation_message;
-- domain_event;
-- orchestration_run;
-- orchestration_step.
-
-Use JSONB only for provider-specific metadata or structured payload snapshots, not as an excuse to avoid core relational invariants.
-
-## 11. API surface
-
-Minimum:
-
-```text
-POST   /api/delivery-subjects
-GET    /api/delivery-subjects/:id
-PATCH  /api/delivery-subjects/:id
-GET    /api/delivery-subjects/:id/summary
-GET    /api/delivery-subjects/:id/readiness
-GET    /api/delivery-subjects/:id/requirements
-GET    /api/delivery-subjects/:id/perspectives
-POST   /api/delivery-subjects/:id/perspectives/:perspectiveId/assign
-GET    /api/me/tasks
-POST   /api/tasks/:id/respond
-POST   /api/contributions/:id/verify
-GET    /api/delivery-subjects/:id/conflicts
-POST   /api/conflicts/:id/resolve
-POST   /api/delivery-subjects/:id/decisions
-GET    /api/delivery-subjects/:id/impacts
-GET    /api/delivery-subjects/:id/work-packages
-GET    /api/work-packages/:id
-POST   /api/delivery-subjects/:id/orchestrate
-GET    /api/delivery-subjects/:id/package.json
-GET    /api/delivery-subjects/:id/package.md
-GET    /api/events/:deliverySubjectId
-```
-
-## 12. Audit/event model
-
-Every meaningful mutation emits an append-only domain event, e.g.:
-
-```text
-DeliverySubjectCreated
-SignalClarified
-PerspectiveProposed
-PerspectiveAssigned
-QuestionCreated
-ContributionReceived
-ContributionVerified
-ContributionRejected
-RequirementCreated
-RequirementRevised
-RequirementVerified
-GapDetected
-ConflictDetected
-DecisionRecorded
-KnowledgeLinked
-DiffProposed
-WorkPackageCreated
-AcceptanceCriterionAdded
-EvaluationAdded
-ReadinessChanged
-PackageReady
-```
-
-This is not full event sourcing. Current-state tables remain authoritative; events provide auditability and war-room debugging.
-
-## 13. Security baseline
-
-Even in PoC:
-- capture authenticated actor identity or explicit mocked actor;
-- record actor for every mutation;
-- mark human vs AI-originated changes;
-- never place credentials/secrets into model context;
-- allowlist model tools/adapters;
-- do not dynamically trust arbitrary MCP servers;
-- preserve history of requirement changes;
-- retain source metadata for retrieved knowledge;
-- log access only at metadata level where content is sensitive;
-- make model/provider configurable for bank-approved deployment.
-
-## 14. Observability
-
-For each orchestration step persist:
+Persist per run:
 
 ```text
 runId
-stepId
+threadId
 deliverySubjectId
-nodeName
-promptVersion
+perspectiveId
+participantId
+opencodeSessionId
 model/provider
+prompt/skill versions
 startedAt/endedAt/latencyMs
-input object IDs (not necessarily full sensitive payload)
+context revision/input object IDs
 tool calls
-structured output snapshot/schema version
-validation errors/retry count
-human interrupt state
-proposed mutations
-applied mutations
+structured result
+schema validation failures
+proposed commands
+applied/rejected commands
 status/error category
 ```
 
-Failure categories:
-`MODEL | PROMPT | CONTEXT | KNOWLEDGE | WORKFLOW | DOMAIN_MODEL | UX | OWNERSHIP`.
+Failure categories remain:
+`MODEL | PROMPT | CONTEXT | KNOWLEDGE | WORKFLOW | DOMAIN_MODEL | UX | OWNERSHIP | CONCURRENCY`.
 
-## 15. Deployment
+## 16. Deployment
 
-Do not hard-bind to Vercel. Ensure:
-- normal Node container build;
-- environment-driven PostgreSQL and model configuration;
-- no platform-only persistence;
-- stateless web/application process beyond DB/checkpointer;
-- health/readiness endpoints.
+### PoC
 
-For local PoC development, one app process + PostgreSQL is sufficient.
+- Next.js/Node Req Helper application: Cloud Run.
+- Firestore: same GCP project/approved region configuration.
+- OpenCode: either:
+  1. a separately deployed internal service using `@opencode-ai/sdk`, or
+  2. embedded/started by the backend where operationally acceptable.
+- Vertex AI: region/model chosen by bank policy.
+
+Treat OpenCode local session storage as disposable. A Cloud Run restart must be recoverable by creating a new OpenCode session and rebuilding context from Firestore.
+
+### Avoid in week one
+
+- Redis;
+- Kafka/PubSub just for UI synchronization;
+- LangGraph;
+- Temporal/Camunda;
+- PostgreSQL;
+- a custom WebSocket collaboration layer;
+- vector database unless retrieval quality demonstrates the need.
