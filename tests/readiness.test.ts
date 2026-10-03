@@ -55,7 +55,7 @@ describe("evaluateReadiness", () => {
     expect(failedCodes).toContain("NO_OPEN_BLOCKING_TASKS");
   });
 
-  it("blocks a required perspective that is still only proposed", () => {
+  it("blocks a required perspective that is still only proposed, regardless of medium criticality", () => {
     const snapshot = seedSnapshot();
     const result = evaluateReadiness({
       ...snapshot,
@@ -91,8 +91,9 @@ describe("evaluateReadiness", () => {
           deliverySubjectId: deliverySubject.id,
           targetType: "REQUIREMENT",
           targetId: "r-verification-state",
-          targetRevision: 0,
+          targetRevision: 99,
           verifierId: "u-data",
+          perspectiveId: "p-data",
           verdict: "VERIFIED",
           status: "ACTIVE",
           createdAt: "2026-10-03T08:00:00+02:00",
@@ -103,6 +104,79 @@ describe("evaluateReadiness", () => {
     expect(
       result.checks.find((c) => c.code === "CRITICAL_REQUIREMENTS_VERIFIED")?.passed,
     ).toBe(false);
+  });
+
+  it("does not accept REVIEWER verification as authoritative", () => {
+    const snapshot = seedSnapshot();
+    const reviewerId = "u-reviewer";
+    const result = evaluateReadiness({
+      ...snapshot,
+      assignments: [
+        ...snapshot.assignments,
+        {
+          id: "a-data-reviewer",
+          perspectiveId: "p-data",
+          userId: reviewerId,
+          relationship: "REVIEWER",
+          status: "ACTIVE",
+        },
+      ],
+      verifications: [
+        {
+          id: "v-reviewer",
+          deliverySubjectId: deliverySubject.id,
+          targetType: "REQUIREMENT",
+          targetId: "r-verification-state",
+          targetRevision: 1,
+          verifierId: reviewerId,
+          perspectiveId: "p-data",
+          verdict: "VERIFIED",
+          status: "ACTIVE",
+          createdAt: "2026-10-03T08:00:00+02:00",
+        },
+      ],
+    });
+
+    expect(
+      result.checks.find((c) => c.code === "CRITICAL_REQUIREMENTS_VERIFIED")?.passed,
+    ).toBe(false);
+  });
+
+  it("accepts current-revision verification from an active OWNER", () => {
+    const snapshot = seedSnapshot();
+    const result = evaluateReadiness({
+      ...snapshot,
+      verifications: [
+        {
+          id: "v-owner",
+          deliverySubjectId: deliverySubject.id,
+          targetType: "REQUIREMENT",
+          targetId: "r-verification-state",
+          targetRevision: 1,
+          verifierId: "u-data",
+          perspectiveId: "p-data",
+          verdict: "VERIFIED",
+          status: "ACTIVE",
+          createdAt: "2026-10-03T08:00:00+02:00",
+        },
+        {
+          id: "v-api-owner",
+          deliverySubjectId: deliverySubject.id,
+          targetType: "REQUIREMENT",
+          targetId: "r-api-exposure",
+          targetRevision: 1,
+          verifierId: "u-api",
+          perspectiveId: "p-api",
+          verdict: "VERIFIED",
+          status: "ACTIVE",
+          createdAt: "2026-10-03T08:00:00+02:00",
+        },
+      ],
+    });
+
+    expect(
+      result.checks.find((c) => c.code === "CRITICAL_REQUIREMENTS_VERIFIED")?.passed,
+    ).toBe(true);
   });
 
   it("does not let an informational score override a blocking failure", () => {
