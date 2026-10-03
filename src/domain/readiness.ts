@@ -11,6 +11,7 @@ import type {
   Requirement,
   RequirementSource,
   Task,
+  Verification,
   WorkPackage,
 } from "./schemas.js";
 
@@ -34,6 +35,7 @@ export type ReadinessSnapshot = {
   assignments: PerspectiveAssignment[];
   requirements: Requirement[];
   requirementSources: RequirementSource[];
+  verifications: Verification[];
   gaps: Gap[];
   conflicts: Conflict[];
   assumptions: Assumption[];
@@ -48,6 +50,9 @@ export type ReadinessSnapshot = {
 const critical = (value: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL") =>
   value === "HIGH" || value === "CRITICAL";
 
+const taskIsOpen = (status: Task["status"]) =>
+  !["COMPLETED", "CANCELLED"].includes(status);
+
 export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult {
   const {
     deliverySubject,
@@ -55,6 +60,7 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     assignments,
     requirements,
     requirementSources,
+    verifications,
     gaps,
     conflicts,
     assumptions,
@@ -67,7 +73,9 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
 
   const checks: ReadinessCheck[] = [];
 
-  const outcomeReady = Boolean(deliverySubject.problemStatement && deliverySubject.desiredOutcome);
+  const outcomeReady = Boolean(
+    deliverySubject.problemStatement && deliverySubject.desiredOutcome,
+  );
   checks.push({
     code: "OUTCOME_DEFINED",
     passed: outcomeReady,
@@ -78,10 +86,22 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     relatedObjectIds: [deliverySubject.id],
   });
 
-  const criticalRequiredPerspectives = perspectives.filter(
-    (p) => p.required && critical(p.criticality) && p.status !== "PROPOSED",
-  );
-  const unownedPerspectiveIds = criticalRequiredPerspectives
+  const requiredPerspectives = perspectives.filter((p) => p.required);
+  const unconfirmedPerspectiveIds = requiredPerspectives
+    .filter((p) => p.status === "PROPOSED")
+    .map((p) => p.id);
+  checks.push({
+    code: "REQUIRED_PERSPECTIVES_CONFIRMED",
+    passed: unconfirmedPerspectiveIds.length === 0,
+    blocking: true,
+    message:
+      unconfirmedPerspectiveIds.length === 0
+        ? "All required perspectives are confirmed."
+        : `${unconfirmedPerspectiveIds.length} required perspective(s) remain only proposed.`,
+    relatedObjectIds: unconfirmedPerspectiveIds,
+  });
+
+  const unownedPerspectiveIds = requiredPerspectives
     .filter(
       (p) =>
         !assignments.some(
@@ -93,13 +113,13 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     )
     .map((p) => p.id);
   checks.push({
-    code: "CRITICAL_PERSPECTIVES_OWNED",
+    code: "REQUIRED_PERSPECTIVES_OWNED",
     passed: unownedPerspectiveIds.length === 0,
     blocking: true,
     message:
       unownedPerspectiveIds.length === 0
-        ? "All required high/critical perspectives have an accountable owner or delegate."
-        : `${unownedPerspectiveIds.length} required high/critical perspective(s) lack an accountable owner/delegate.`,
+        ? "All required perspectives have an accountable owner or delegate."
+        : `${unownedPerspectiveIds.length} required perspective(s) lack an active owner/delegate.`,
     relatedObjectIds: unownedPerspectiveIds,
   });
 
@@ -107,8 +127,18 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     (r) => critical(r.criticality) && r.status !== "SUPERSEDED",
   );
 
+  const requirementIsVerified = (requirement: Requirement) =>
+    verifications.some(
+      (verification) =>
+        verification.targetType === "REQUIREMENT" &&
+        verification.targetId === requirement.id &&
+        verification.targetRevision === requirement.revision &&
+        verification.status === "ACTIVE" &&
+        verification.verdict === "VERIFIED",
+    );
+
   const unverifiedCriticalRequirementIds = criticalRequirements
-    .filter((r) => r.status !== "VERIFIED" && r.status !== "APPROVED")
+    .filter((r) => !requirementIsVerified(r))
     .map((r) => r.id);
   checks.push({
     code: "CRITICAL_REQUIREMENTS_VERIFIED",
@@ -116,8 +146,8 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     blocking: true,
     message:
       unverifiedCriticalRequirementIds.length === 0
-        ? "All high/critical requirements are verified."
-        : `${unverifiedCriticalRequirementIds.length} high/critical requirement(s) are not verified.`,
+        ? "All high/critical requirements have an active verification for their current revision."
+        : `${unverifiedCriticalRequirementIds.length} high/critical requirement(s) lack current-revision verification.`,
     relatedObjectIds: unverifiedCriticalRequirementIds,
   });
 
@@ -125,7 +155,10 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     .filter(
       (r) =>
         !requirementSources.some(
-          (s) => s.requirementId === r.id && s.authoritative,
+          (s) =>
+            s.requirementId === r.id &&
+            s.requirementRevision === r.revision &&
+            s.authoritative,
         ),
     )
     .map((r) => r.id);
@@ -135,8 +168,8 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     blocking: true,
     message:
       noAuthoritativeSourceIds.length === 0
-        ? "All high/critical requirements have authoritative provenance."
-        : `${noAuthoritativeSourceIds.length} high/critical requirement(s) lack authoritative provenance.`,
+        ? "All high/critical requirements have authoritative provenance for the current revision."
+        : `${noAuthoritativeSourceIds.length} high/critical requirement(s) lack authoritative current-revision provenance.`,
     relatedObjectIds: noAuthoritativeSourceIds,
   });
 
@@ -168,22 +201,41 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     relatedObjectIds: openBlockingConflictIds,
   });
 
-  const unmanagedAssumptionIds = assumptions
+  const unmanagedMajorAssumptionIds = assumptions
     .filter(
       (a) =>
-        a.status === "OPEN" &&
+        a.status !== "SUPERSEDED" &&
+        critical(a.criticality) &&
         (!a.ownerId || !a.validationMethod),
     )
     .map((a) => a.id);
   checks.push({
-    code: "OPEN_ASSUMPTIONS_MANAGED",
-    passed: unmanagedAssumptionIds.length === 0,
+    code: "MAJOR_ASSUMPTIONS_MANAGED",
+    passed: unmanagedMajorAssumptionIds.length === 0,
     blocking: true,
     message:
-      unmanagedAssumptionIds.length === 0
-        ? "Open assumptions have an owner and validation method."
-        : `${unmanagedAssumptionIds.length} open assumption(s) are missing owner or validation method.`,
-    relatedObjectIds: unmanagedAssumptionIds,
+      unmanagedMajorAssumptionIds.length === 0
+        ? "All major assumptions have an owner and validation method."
+        : `${unmanagedMajorAssumptionIds.length} major assumption(s) lack owner or validation method.`,
+    relatedObjectIds: unmanagedMajorAssumptionIds,
+  });
+
+  const unresolvedBlockingAssumptionIds = assumptions
+    .filter(
+      (a) =>
+        a.blocking &&
+        (a.status === "OPEN" || a.status === "INVALIDATED"),
+    )
+    .map((a) => a.id);
+  checks.push({
+    code: "NO_UNRESOLVED_BLOCKING_ASSUMPTIONS",
+    passed: unresolvedBlockingAssumptionIds.length === 0,
+    blocking: true,
+    message:
+      unresolvedBlockingAssumptionIds.length === 0
+        ? "No blocking assumptions remain unresolved."
+        : `${unresolvedBlockingAssumptionIds.length} blocking assumption(s) remain unresolved.`,
+    relatedObjectIds: unresolvedBlockingAssumptionIds,
   });
 
   const impactsReady = snapshot.requiredImpactLinksSatisfied !== false;
@@ -214,9 +266,30 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     relatedObjectIds: unpackagedCriticalIds,
   });
 
-  const acRequirementIds = new Set(acceptanceCriteria.map((ac) => ac.requirementId));
+  const untargetedPackageIds = workPackages
+    .filter((wp) => wp.requirementIds.length > 0 && !wp.targetAreaRef)
+    .map((wp) => wp.id);
+  checks.push({
+    code: "WORK_PACKAGES_TARGETED",
+    passed: untargetedPackageIds.length === 0,
+    blocking: true,
+    message:
+      untargetedPackageIds.length === 0
+        ? "All populated work packages have a target implementation area."
+        : `${untargetedPackageIds.length} work package(s) lack a target implementation area.`,
+    relatedObjectIds: untargetedPackageIds,
+  });
+
   const missingAcceptanceIds = criticalRequirements
-    .filter((r) => !acRequirementIds.has(r.id))
+    .filter(
+      (r) =>
+        !acceptanceCriteria.some(
+          (ac) =>
+            ac.targetType === "REQUIREMENT" &&
+            ac.targetId === r.id &&
+            (ac.targetRevision == null || ac.targetRevision === r.revision),
+        ),
+    )
     .map((r) => r.id);
   checks.push({
     code: "CRITICAL_REQUIREMENTS_HAVE_ACCEPTANCE",
@@ -224,15 +297,22 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     blocking: true,
     message:
       missingAcceptanceIds.length === 0
-        ? "All high/critical requirements have acceptance criteria."
-        : `${missingAcceptanceIds.length} high/critical requirement(s) lack acceptance criteria.`,
+        ? "All high/critical requirements have current acceptance criteria."
+        : `${missingAcceptanceIds.length} high/critical requirement(s) lack current acceptance criteria.`,
     relatedObjectIds: missingAcceptanceIds,
   });
 
-  const evalRequirementIds = new Set(evaluations.map((e) => e.requirementId));
   const missingEvalIds = requirements
     .filter((r) => r.requiresEvaluation && r.status !== "SUPERSEDED")
-    .filter((r) => !evalRequirementIds.has(r.id))
+    .filter(
+      (r) =>
+        !evaluations.some(
+          (evaluation) =>
+            evaluation.targetType === "REQUIREMENT" &&
+            evaluation.targetId === r.id &&
+            (evaluation.targetRevision == null || evaluation.targetRevision === r.revision),
+        ),
+    )
     .map((r) => r.id);
   checks.push({
     code: "REQUIRED_EVALS_DEFINED",
@@ -240,34 +320,58 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     blocking: true,
     message:
       missingEvalIds.length === 0
-        ? "All requirements flagged for evaluation have at least one eval."
-        : `${missingEvalIds.length} requirement(s) flagged for evaluation have no eval.`,
+        ? "All requirements flagged for evaluation have a current eval."
+        : `${missingEvalIds.length} requirement(s) flagged for evaluation have no current eval.`,
     relatedObjectIds: missingEvalIds,
   });
 
-  const unresolvedBlockingDependencies = dependencies
+  const unresolvedBlockingDependencyIds = dependencies
     .filter((d) => d.blocking && !d.resolved)
-    .filter((d) => !d.ownerId)
+    .map((d) => d.id);
+  checks.push({
+    code: "NO_UNRESOLVED_BLOCKING_DEPENDENCIES",
+    passed: unresolvedBlockingDependencyIds.length === 0,
+    blocking: true,
+    message:
+      unresolvedBlockingDependencyIds.length === 0
+        ? "No blocking dependencies remain unresolved."
+        : `${unresolvedBlockingDependencyIds.length} blocking dependency/dependencies remain unresolved.`,
+    relatedObjectIds: unresolvedBlockingDependencyIds,
+  });
+
+  const unownedBlockingDependencyIds = dependencies
+    .filter((d) => d.blocking && !d.resolved && !d.ownerId)
     .map((d) => d.id);
   checks.push({
     code: "BLOCKING_DEPENDENCIES_OWNED",
-    passed: unresolvedBlockingDependencies.length === 0,
+    passed: unownedBlockingDependencyIds.length === 0,
     blocking: true,
     message:
-      unresolvedBlockingDependencies.length === 0
+      unownedBlockingDependencyIds.length === 0
         ? "All unresolved blocking dependencies have an owner."
-        : `${unresolvedBlockingDependencies.length} unresolved blocking dependency/dependencies lack an owner.`,
-    relatedObjectIds: unresolvedBlockingDependencies,
+        : `${unownedBlockingDependencyIds.length} unresolved blocking dependency/dependencies lack an owner.`,
+    relatedObjectIds: unownedBlockingDependencyIds,
+  });
+
+  const openBlockingTaskIds = tasks
+    .filter((task) => task.blocking && taskIsOpen(task.status))
+    .map((task) => task.id);
+  checks.push({
+    code: "NO_OPEN_BLOCKING_TASKS",
+    passed: openBlockingTaskIds.length === 0,
+    blocking: true,
+    message:
+      openBlockingTaskIds.length === 0
+        ? "No blocking human tasks remain open."
+        : `${openBlockingTaskIds.length} blocking human task(s) remain open.`,
+    relatedObjectIds: openBlockingTaskIds,
   });
 
   const unassignedBlockingTaskIds = tasks
     .filter(
-      (t) =>
-        t.blocking &&
-        (t.status === "OPEN" || t.status === "WAITING") &&
-        !t.assigneeId,
+      (task) => task.blocking && taskIsOpen(task.status) && !task.assigneeId,
     )
-    .map((t) => t.id);
+    .map((task) => task.id);
   checks.push({
     code: "BLOCKING_TASKS_ASSIGNED",
     passed: unassignedBlockingTaskIds.length === 0,
@@ -284,10 +388,9 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
   const score = blockingChecks.length
     ? Math.round((passedBlockingChecks / blockingChecks.length) * 100)
     : 100;
-  const ready = blockingChecks.every((c) => c.passed);
 
   return {
-    state: ready ? "READY" : "NOT_READY",
+    state: blockingChecks.every((c) => c.passed) ? "READY" : "NOT_READY",
     score,
     checks,
   };
