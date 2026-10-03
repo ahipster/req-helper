@@ -27,6 +27,33 @@
       ]
     },
     {
+      "collectionGroup": "requirementChangeProposals",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "changeType", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "requirementMatches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "blocking", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "relationship", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "requirementQualityFindings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "blocking", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "updatedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "requirementRevisions",
       "queryScope": "COLLECTION",
       "fields": [
