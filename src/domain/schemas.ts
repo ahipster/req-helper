@@ -216,6 +216,7 @@ export const VerificationSchema = z.discriminatedUnion("targetType", [
     targetType: z.literal("REQUIREMENT"),
     targetId: z.string(),
     targetRevision: z.number().int().positive(),
+    perspectiveId: z.string(),
   }),
   VerificationCommon.extend({
     targetType: z.literal("PROPOSED_DIFF"),
@@ -322,12 +323,17 @@ export const RequirementRevisionSchema = z.object({
   requirementId: z.string(),
   revision: z.number().int().positive(),
   previousRevision: z.number().int().positive().optional(),
-  statement: z.string(),
-  title: z.string(),
+  type: RequirementType,
+  title: z.string().min(1),
+  statement: z.string().min(1),
+  rationale: z.string().optional(),
+  priority: Priority,
+  criticality: Criticality,
+  ownerId: z.string().optional(),
+  requiresEvaluation: z.boolean(),
   changedByActorType: z.enum(["HUMAN", "AI", "SYSTEM"]),
   changedByActorId: z.string().optional(),
   reason: z.string().optional(),
-  sourceIds: z.array(z.string()).default([]),
   createdAt: z.string(),
 });
 
