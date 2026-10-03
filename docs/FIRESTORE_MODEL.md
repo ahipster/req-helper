@@ -6,10 +6,13 @@ Cloud Firestore is the authoritative shared state store for the Req Helper PoC. 
 
 ```text
 users/{userId}
+  /inbox/{projectionId}             # read-only My Work projection
 roleTemplates/{roleTemplateId}
 perspectiveTemplates/{perspectiveTemplateId}
 deliverySubjects/{subjectId}
 ```
+
+The user inbox is a disposable read projection. The authoritative Task always remains under its Delivery Subject.
 
 ## Delivery Subject root
 
@@ -42,7 +45,7 @@ deliverySubjects/{subjectId}
 
 `revision` increments on material domain mutation and is the basis for stale-agent detection.
 
-## Subcollections
+## Delivery Subject subcollections
 
 ```text
 deliverySubjects/{subjectId}/members/{userId}
@@ -91,6 +94,41 @@ Use references/stable IDs rather than large nested objects or unbounded arrays.
 ```
 
 Global `DELIVERY_LEAD` capability does not grant access to every subject. Subject membership establishes actual participation in a specific Delivery Subject.
+
+## My Work inbox projection
+
+A browser-wide collection-group Task query conflicts with strict subject-membership rules because Firestore security rules are not post-query filters. P0 therefore maintains:
+
+```text
+users/{userId}/inbox/{projectionId}
+```
+
+Projection shape:
+
+```ts
+{
+  id,
+  userId,
+  deliverySubjectId,
+  taskId,
+  taskType,
+  taskStatus,
+  title,
+  perspectiveId?,
+  blocking,
+  deliverySubjectTitle,
+  deliverySubjectRevision,
+  updatedAt
+}
+```
+
+Rules:
+
+- authoritative Task remains `deliverySubjects/{subjectId}/tasks/{taskId}`;
+- backend services update/remove the inbox projection when assignment/status changes;
+- the projection may be rebuilt from authoritative tasks;
+- user may read only their own inbox (ADMIN may read under PoC policy);
+- no browser writes.
 
 ## Perspective and Assignment
 
@@ -168,12 +206,21 @@ Evidence has its own collection so contribution/requirement/conflict records do 
 
 Verification is immutable and revision-bound where applicable.
 
+Targets:
+
+```text
+CONTRIBUTION        -> no target revision
+REQUIREMENT         -> targetRevision required
+PROPOSED_DIFF       -> targetRevision required
+```
+
+Common fields:
+
 ```ts
 {
   id,
-  targetType: "CONTRIBUTION" | "REQUIREMENT" | "PROPOSED_DIFF",
+  targetType,
   targetId,
-  targetRevision?,
   verifierId,
   perspectiveId?,
   verdict: "VERIFIED" | "REJECTED" | "AMENDED",
@@ -187,7 +234,7 @@ When a Requirement revision changes, prior Verification records remain for audit
 
 ## KnowledgeReference and ProposedDiff
 
-Store external source metadata rather than source content. Proposed diffs are separate records keyed to a KnowledgeReference.
+Store external source metadata rather than source content. Proposed diffs are separate records keyed to a KnowledgeReference and have their own revision/timestamps.
 
 ## Requirement
 
@@ -202,7 +249,7 @@ Current state:
   rationale?,
   priority,
   criticality,
-  status,
+  status: "DRAFT" | "NEEDS_INPUT" | "PROPOSED" | "CONFLICTED" | "SUPERSEDED",
   ownerId?,
   extractionConfidence?,
   requiresEvaluation,
@@ -211,6 +258,8 @@ Current state:
   updatedAt
 }
 ```
+
+Verification is deliberately not encoded in Requirement status.
 
 Meaning:
 
@@ -262,7 +311,9 @@ A conflict supports two or more positions:
   blocking,
   resolution?,
   decisionId?,
-  status
+  status,
+  createdAt,
+  updatedAt
 }
 ```
 
@@ -302,20 +353,22 @@ WAITING_ON_OTHER | COMPLETED | CANCELLED
   status,
   requirementIds: [],
   dependencyIds: [],
-  knowledgeReferenceIds: []
+  knowledgeReferenceIds: [],
+  createdAt,
+  updatedAt
 }
 ```
 
-`targetAreaRef` is required for a populated package. A human coordinator is not a substitute for implementation-area identity.
+`targetAreaRef` is required. A human coordinator is not a substitute for implementation-area identity.
 
 ## AcceptanceCriterion and Evaluation
 
-Both use:
+Both use generalized target types:
 
 ```text
-targetType = REQUIREMENT | WORK_PACKAGE | DELIVERY_SUBJECT
-targetId
-targetRevision?   // normally for Requirement targets
+REQUIREMENT     -> targetRevision required
+WORK_PACKAGE    -> no requirement revision
+DELIVERY_SUBJECT -> no requirement revision
 ```
 
 This allows integration/package-level acceptance instead of forcing every check onto a single requirement.
@@ -348,7 +401,7 @@ User-visible conversation continuity is stored in `messages`. Messages are not a
 }
 ```
 
-Use `contextRevisionPresented`, not a vaguely named “last context revision”. It means the highest Delivery Subject revision whose authoritative context was actually presented to the OpenCode session.
+`contextRevisionPresented` means the highest Delivery Subject revision whose authoritative context was actually presented to the OpenCode session.
 
 Do not set it to `domainRevisionAtEnd` merely because the same run caused mutations. Those mutations have not necessarily been presented back to the session yet.
 
@@ -365,6 +418,7 @@ participantId
 perspectiveId
 domainRevisionAtStart
 contextRevisionPresentedBefore
+contextRevisionPresentedThisRun
 hydrationMode = FULL | DELTA | MINIMAL
 inputObjectIds
 skill versions
@@ -409,7 +463,7 @@ May execute concurrently; domain revisions protect shared objects.
 
 Subscribe narrowly.
 
-- My Work: current user's task collection-group query.
+- My Work: `users/{currentUser}/inbox`, filtered by taskStatus as needed.
 - Delivery Overview: root summary + perspectives + blockers + recent events.
 - Drill Workspace: current task + thread messages + relevant requirements/conflicts.
 - Requirement detail: current requirement + revisions + sources + verifications + acceptance/evals.
@@ -418,9 +472,9 @@ Subscribe narrowly.
 
 ## Security/access
 
-Browser reads must be restricted by Delivery Subject membership for subject data, not merely “any authenticated tester”. Admin/global-template access remains governed separately.
+Browser reads of Delivery Subject data are restricted by active Delivery Subject membership (or ADMIN policy). Admin/global-template access is governed separately.
 
-P0 may still use backend-only authoritative writes. The browser never receives Firestore admin credentials or OpenCode/Vertex credentials.
+P0 authoritative writes remain backend-only. The browser never receives Firestore admin credentials or OpenCode/Vertex credentials.
 
 ## Data-size rules
 
