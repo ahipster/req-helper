@@ -1,261 +1,251 @@
 # BPMN-Style Workflow
 
-This is the logical business process for the PoC. The implementation uses persisted Firestore tasks/state plus a deterministic application controller; OpenCode performs bounded reasoning/tool work. No generic workflow engine is required.
+Req Helper uses persisted Firestore state/tasks plus deterministic application services. OpenCode performs bounded reasoning/tool work; there is no suspended generic workflow engine.
 
 ## End-to-end process
 
 ```text
 (Start)
    |
-   v
-[Create Delivery Subject]
+[Create Delivery Subject + SourceArtifacts]
    |
-   v
-[Clarify signal / problem / outcome]
+[Clarify problem / outcome / scope / constraints / success]
    |
-   v
-[Retrieve related enterprise knowledge]
+[Resolve subject membership/access]
    |
-   v
+[Retrieve enterprise knowledge]
+   |
 [OpenCode proposes impacts + perspectives]
    |
-   v
-[Human confirms perspective set]
+[Delivery Lead confirms required perspectives]
    |
-   v
-<Parallel Gateway: required perspectives>
+[Assign OWNER/DELEGATE/CONTRIBUTOR/REVIEWER]
    |
-   +--------------------------------------------------+
-   |                                                  |
-   v                                                  |
-[Assign owner/delegate/contributors]                  |
-   |                                                  |
-   v                                                  |
-[Create targeted drill task]                          |
-   |                                                  |
-   v                                                  |
-(User Task: answer / don't know / nominate expert)    |
-   |                                                  |
-   v                                                  |
-[OpenCode extracts contributions + epistemic data]    |
-   |                                                  |
-   v                                                  |
-[OpenCode proposes requirement commands]              |
-   |                                                  |
-   v                                                  |
-[Validate schema + domain invariants + revision]       |
-   |                                                  |
-   v                                                  |
-[Firestore transaction: state + provenance + event]   |
-   |                                                  |
-   v                                                  |
-[Assess perspective confidence/coverage]              |
-   |                                                  |
-   v                                                  |
-<Enough information?> ---- NO ----> [Next drill] -----+
+<Parallel required-perspective work>
    |
-  YES
+   +--> [Create targeted Task: OPEN]
+   |       |
+   |     [Participant opens -> IN_PROGRESS]
+   |       |
+   |     [Human answer persisted -> ANSWERED]
+   |       |
+   |     [OpenCode begins -> PROCESSING]
+   |       |
+   |     [Extract Contribution/Evidence]
+   |       |
+   |     [Propose Requirement/Gap/Assumption/Conflict commands]
+   |       |
+   |     [Validate authz + schema + revision + idempotency]
+   |       |
+   |     [Firestore transaction + RequirementRevision/Source/Event]
+   |       |
+   |     <Needs another human?>
+   |        | YES -> [WAITING_ON_OTHER + related task]
+   |        | NO  -> [COMPLETED]
+   |       |
+   |     <Enough perspective coverage?> -- NO --> next Task
    |
-   v
-<Join Gateway>
+<Join when required perspectives converge enough>
    |
-   v
 [Cross-perspective synthesis]
    |
-   v
-[Detect gaps, assumptions and conflicts]
+[Detect gaps / assumptions / N-party conflicts]
    |
-   v
 <Blocking issues?>
    | YES
    v
-[Create verification / gap / resolution tasks]
+[Create VERIFY / FILL_GAP / RESOLVE_CONFLICT / DECIDE tasks]
    |
-   v
-(User Tasks to affected humans)
+[Human verification / positions / decision]
    |
-   v
-[Record verification or explicit decision]
-   |
-   +-----------------------------> [Cross-perspective synthesis]
+[Reassess affected requirements]
+   +---------------------------> [Cross-perspective synthesis]
    |
    NO / resolved
    v
-[Identify affected implementation areas]
+[Identify implementation areas]
    |
-   v
-[Create work packages + dependencies]
+[Create targeted WorkPackages + Dependencies]
    |
-   v
-[Generate acceptance criteria]
+[Generate Requirement/WorkPackage/DeliverySubject acceptance + evals]
    |
-   v
-[Generate evaluation definitions]
+[Run deterministic readiness]
    |
-   v
-[Run deterministic readiness evaluation]
-   |
-   v
-<Ready?>
-   | NO
-   v
-[Create targeted missing tasks]
-   |
-   +-----------------------------> [Relevant drill/resolution stage]
+<READY?> -- NO --> [Create targeted blocker tasks] --> relevant stage
    |
   YES
    v
-(User Task: final package review)
+[FINAL_REVIEW task]
    |
-   v
-[Publish JSON + Markdown package]
+[Publish JSON + Markdown + read-only package API]
    |
-   v
 (Ready for downstream SDLC)
 ```
 
-## Human interaction subprocess
+## Human task subprocess
 
-Every human wait is represented by a durable Firestore Task, not suspended in-memory workflow state.
+Canonical Task lifecycle:
 
 ```text
-[Task created]
-   |
-   v
-[Relevant user's realtime UI receives task]
-   |
-   v
-[Render why this matters + condensed context]
-   |
-   v
-<User response]
-   |
-   +-- "I don't know" --------> [Capture unknown + route/replan]
-   |
-   +-- "Ask someone" ---------> [Capture suggested expert + create task]
-   |
-   +-- substantive answer -----> [Persist raw message/answer]
-                                   |
-                                   v
-                           [Acquire AgentThread lease]
-                                   |
-                                   v
-                       [OpenCode extracts contribution(s)]
-                                   |
-                                   v
-                         [Validate/apply domain command]
-                                   |
-                                   v
-                         <Needs explicit verification?>
-                              | YES            | NO
-                              v                v
-                       [Owner review task]   [Continue]
+OPEN -> IN_PROGRESS -> ANSWERED -> PROCESSING -> COMPLETED
+                     \-> WAITING_ON_OTHER -> IN_PROGRESS
+Any nonterminal -> CANCELLED
 ```
 
-Each participant/perspective interaction has its own logical AgentThread. Multiple AgentThreads may proceed in parallel against the same Delivery Subject.
+Important ordering:
 
-## Conflict-resolution subprocess
+```text
+Human submits answer
+ -> persist message/answer
+ -> task ANSWERED
+ -> only then invoke OpenCode
+```
+
+If OpenCode/model fails, the human answer remains durable and the task is retriable.
+
+Special responses:
+
+```text
+I don't know
+ -> persist Contribution(epistemicMode=UNKNOWN)
+ -> identify likely owner/expert
+ -> create/reroute follow-up
+
+Ask someone
+ -> persist suggested participant
+ -> Delivery Lead/authorized flow confirms access/assignment if needed
+ -> create related task
+```
+
+## Verification subprocess
+
+```text
+[Requirement/Contribution/ProposedDiff needs authority]
+   |
+[Identify active OWNER/DELEGATE for relevant perspective]
+   |
+[VERIFY task]
+   |
+[Render exact target revision + provenance/evidence]
+   |
+<Human verdict>
+   +-- VERIFIED -> append active Verification
+   +-- REJECTED -> append Verification + reopen synthesis/gap
+   +-- AMENDED  -> append Verification + normal revision/edit service
+```
+
+A Requirement revision change never inherits old-revision readiness verification automatically.
+
+Reviewer comments/challenges are advisory and follow a REVIEW task, not authoritative verification.
+
+## Requirement edit subprocess
+
+Human Edit and AI proposal use the same path:
+
+```text
+[Edit proposed]
+ -> authorize
+ -> compare expected/current requirement revision
+ -> append RequirementRevision
+ -> update current Requirement revision
+ -> persist RequirementSource links
+ -> old revision Verification remains audit-only
+ -> reassess revision-bound acceptance/evals
+ -> reassess dependent conflicts/gaps
+ -> append DomainEvent
+```
+
+## N-party conflict-resolution subprocess
 
 ```text
 [Conflict detected]
    |
-   v
-[Persist Conflict + identify owners/perspectives]
+[Persist Conflict with 2+ initial positions]
    |
-   v
-[Build evidence bundle]
+[Identify affected participants + named decision owner]
    |
-   v
-[OpenCode frames disagreement + possible options]
+[Create participant-specific RESOLVE_CONFLICT/REVIEW tasks]
    |
-   v
-(User discussion / review)
++---------- independent threads in parallel ----------+
+| participant records position/evidence               |
++------------------------------------------------------+
    |
-   v
-<Decision required?>
-   | YES                         | NO
-   v                             v
-[Named decision owner]        [Correct source/requirement]
-   |                             |
-   v                             |
-[Record explicit decision]       |
-   |                             |
-   +-------------+---------------+
-                 v
-         [Mark conflict resolved]
-                 |
-                 v
-        [Re-evaluate affected requirements]
+[Shared Conflict Workspace aggregates structured positions]
+   |
+[OpenCode produces neutral summary/options]
+   |
+<Decision/source correction needed?>
+   +-- Decision -> [Named human owner records Decision]
+   +-- Correction -> [Normal requirement/source correction path]
+   |
+[Mark conflict resolved]
+   |
+[Re-evaluate affected requirements / tasks / readiness]
 ```
+
+The shared Conflict Workspace is a shared **view**, not a shared OpenCode conversation/session.
 
 ## Knowledge-impact subprocess
 
 ```text
-[Relevant artifact linked]
-   |
-   v
-[Compare current understanding vs proposed requirements]
-   |
-   v
-[Propose ADD/MODIFY/REMOVE/DEPRECATE/UNKNOWN_CHANGE]
-   |
-   v
-[Human can confirm/reject/correct]
-   |
-   v
-[Persist ProposedDiff]
+[KnowledgeReference linked]
+ -> compare current source understanding vs proposed change
+ -> ProposedDiff ADD/MODIFY/REMOVE/DEPRECATE/UNKNOWN_CHANGE
+ -> human confirm/reject/correct where needed
+ -> persist Verification/updated ProposedDiff
 ```
 
-No write-back to source repositories occurs in the PoC.
+No authoritative source-system write-back occurs in the PoC.
+
+## Work-package subprocess
+
+```text
+[Converged requirements]
+ -> identify target implementation areas
+ -> create WorkPackage(targetAreaRef, targetTeamId?, coordinatorId?)
+ -> attach requirements
+ -> detect cross-package dependencies
+ -> package-level acceptance/evals where needed
+```
+
+A human coordinator is never substituted for target implementation-area identity.
 
 ## Readiness subprocess
 
-Readiness is deterministic application code over authoritative Firestore state.
-
 ```text
-[Load persisted domain state]
-   |
-   v
-[Evaluate all readiness checks]
-   |
-   v
-[Persist ReadinessEvaluated event]
-   |
-   +-- blocking failure --> [NOT_READY + actionable blockers]
-   |
-   +-- no blocking failure -> [READY]
+[Load canonical persisted snapshot]
+ -> deterministic checks
+ -> append ReadinessEvaluated event
+ -> any blocking failure: NOT_READY + exact object IDs/actions
+ -> all blocking pass: READY
 ```
 
-AI may explain a blocker or propose next tasks, but it cannot override the readiness evaluator.
+Notable blockers include required-but-PROPOSED perspectives, missing OWNER/DELEGATE, stale requirement verification, open blocking assumptions/dependencies/tasks and missing current acceptance/evals.
 
-## State transitions
-
-```text
-DRAFT
-  -> DISCOVERING
-  -> DRILLING
-  -> RESOLVING
-  -> SPLITTING
-  -> READY
-  -> HANDED_OFF
-
-Any active state may move back to DRILLING/RESOLVING when new evidence invalidates previous assumptions.
-CANCELLED is terminal.
-```
-
-## PoC execution loop
-
-The smallest durable loop is:
+## OpenCode recovery/context subprocess
 
 ```text
-CREATE TASK
- -> HUMAN ANSWER
- -> ACQUIRE AGENT THREAD LEASE
- -> OPENCODE EXTRACT/SYNTHESIZE
- -> VALIDATE STRUCTURED COMMAND
- -> FIRESTORE TRANSACTION
- -> ASSESS GAPS/CONFLICTS
- -> CREATE NEXT TASK(S)
+[Task processing begins]
+ -> acquire AgentThread lease
+ -> resolve stored OpenCode session
+ -> missing? create session + increment generation + FULL hydration
+ -> compare DeliverySubject.revision vs contextRevisionPresented
+ -> changed? FULL bounded authoritative hydration in P0
+ -> run OpenCode
+ -> record revision actually presented
+ -> validate/apply commands
+ -> persist domainRevisionAtEnd separately
+ -> release lease
 ```
 
-There is no suspended graph checkpoint. Waiting is represented by persisted tasks. If OpenCode loses its session, the backend creates a new one and reconstructs relevant context from Firestore.
+Never write same-run `domainRevisionAtEnd` as `contextRevisionPresented` unless that state was actually presented back to OpenCode.
+
+## Delivery Subject state transitions
+
+```text
+DRAFT -> DISCOVERING -> DRILLING -> RESOLVING -> SPLITTING -> READY -> HANDED_OFF
+                         ^             |
+                         +-------------+
+```
+
+New evidence may return an active subject to DRILLING/RESOLVING. `CANCELLED` is terminal.
