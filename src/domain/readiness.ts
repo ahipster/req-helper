@@ -195,6 +195,17 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     relatedObjectIds: unresolvedMatchIds,
   });
 
+  const architectureImpactHasAuthority = (impact: RequirementArchitectureImpact) =>
+    impact.status === "CONFIRMED" &&
+    Boolean(impact.confirmedBy && impact.confirmedPerspectiveId) &&
+    assignments.some(
+      (assignment) =>
+        assignment.perspectiveId === impact.confirmedPerspectiveId &&
+        assignment.userId === impact.confirmedBy &&
+        assignment.status === "ACTIVE" &&
+        (assignment.relationship === "OWNER" || assignment.relationship === "DELEGATE"),
+    );
+
   const architecturePinned = Boolean(snapshot.architectureContext);
   checks.push({
     code: "ARCHITECTURE_BASELINE_PINNED",
@@ -251,6 +262,20 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     relatedObjectIds: staleArchitectureImpactIds,
   });
 
+  const unauthorizedArchitectureImpactIds = architectureImpacts
+    .filter((impact) => impact.status === "CONFIRMED" && !architectureImpactHasAuthority(impact))
+    .map((impact) => impact.id);
+  checks.push({
+    code: "ARCHITECTURE_IMPACT_CONFIRMATIONS_AUTHORIZED",
+    passed: unauthorizedArchitectureImpactIds.length === 0,
+    blocking: architectureRequired,
+    message:
+      unauthorizedArchitectureImpactIds.length === 0
+        ? "All confirmed architecture impacts were confirmed by an active OWNER/DELEGATE."
+        : `${unauthorizedArchitectureImpactIds.length} confirmed architecture impact(s) lack active OWNER/DELEGATE authority.`,
+    relatedObjectIds: unauthorizedArchitectureImpactIds,
+  });
+
   if (architecturePolicy?.requireConfirmedImpactForHighCritical) {
     const missingImpactRequirementIds = criticalRequirements
       .filter(
@@ -259,7 +284,7 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
             (impact) =>
               impact.requirementId === requirement.id &&
               impact.requirementRevision === requirement.revision &&
-              impact.status === "CONFIRMED" &&
+              architectureImpactHasAuthority(impact) &&
               (!snapshot.architectureContext ||
                 (impact.architectureBaselineId === snapshot.architectureContext.architectureBaselineId &&
                   impact.architectureBaselineVersion === snapshot.architectureContext.architectureBaselineVersion)),
@@ -272,8 +297,8 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
       blocking: true,
       message:
         missingImpactRequirementIds.length === 0
-          ? "All high/critical requirements have a confirmed current-revision architecture impact."
-          : `${missingImpactRequirementIds.length} high/critical requirement(s) lack confirmed architecture impact.`,
+          ? "All high/critical requirements have an authoritative confirmed current-revision architecture impact."
+          : `${missingImpactRequirementIds.length} high/critical requirement(s) lack authoritative confirmed architecture impact.`,
       relatedObjectIds: missingImpactRequirementIds,
     });
   }
@@ -311,7 +336,7 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
       workPackageImplementationTargets
         .map((target) => impactById.get(target.architectureImpactId))
         .filter((impact): impact is RequirementArchitectureImpact => Boolean(impact))
-        .filter((impact) => impact.status === "CONFIRMED")
+        .filter((impact) => architectureImpactHasAuthority(impact))
         .map((impact) => impact.requirementId),
     );
     const missingImplementationTargetIds = criticalRequirements
