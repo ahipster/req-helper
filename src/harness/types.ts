@@ -1,16 +1,20 @@
 import type { ZodType } from "zod";
 
+export type HydrationMode = "FULL" | "DELTA" | "MINIMAL";
+
 export type EnsureThreadInput = {
   deliverySubjectId: string;
   perspectiveId?: string;
   participantId: string;
   logicalThreadId: string;
   existingSessionId?: string;
+  sessionGeneration?: number;
 };
 
 export type AgentThreadHandle = {
   logicalThreadId: string;
   sessionId: string;
+  sessionGeneration: number;
   recreated: boolean;
 };
 
@@ -22,6 +26,8 @@ export type HarnessMetadata = {
   runId: string;
   skillVersion: string;
   domainRevision: number;
+  lastContextRevision?: number;
+  hydrationMode: HydrationMode;
 };
 
 export type HarnessPrompt<T> = {
@@ -35,6 +41,7 @@ export type HarnessPrompt<T> = {
 export type HarnessResult<T> = {
   output: T;
   sessionId: string;
+  sessionGeneration: number;
   provider?: string;
   model?: string;
   rawMetadata?: unknown;
@@ -50,7 +57,7 @@ export type HarnessStreamPrompt = {
 export type HarnessEvent =
   | { type: "text"; text: string }
   | { type: "tool"; name: string; payload?: unknown }
-  | { type: "done"; sessionId: string }
+  | { type: "done"; sessionId: string; sessionGeneration: number }
   | { type: "error"; message: string };
 
 export interface AgentHarness {
