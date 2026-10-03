@@ -1,6 +1,6 @@
 # Firestore Model
 
-Cloud Firestore is the authoritative shared state store for the Req Helper PoC. `src/domain/schemas.ts` and `docs/DOMAIN_MODEL.md` remain canonical.
+Cloud Firestore is the authoritative shared state store for the Req Helper PoC. `src/domain/schemas.ts`, `src/domain/architecture.ts` and `docs/DOMAIN_MODEL.md` remain canonical.
 
 ## Root collections
 
@@ -11,15 +11,24 @@ roleTemplates/{roleTemplateId}
 perspectiveTemplates/{perspectiveTemplateId}
 
 requirementProfiles/{profileId}
-  /versions/{versionId}                  # immutable once PUBLISHED
+  /versions/{versionId}
+    /architecturePolicies/{policyId}
 
 requirementCatalog/{requirementId}
-  /versions/{versionId}                  # immutable current/history snapshots
+  /versions/{versionId}
+
+architectureSources/{sourceId}
+architectureIngestionRuns/{runId}
+architectureBaselines/{baselineId}
+  /elements/{elementId}
+  /relationships/{relationshipId}
+  /views/{viewId}
+  /ingestionFindings/{findingId}
 
 deliverySubjects/{subjectId}
 ```
 
-Published Requirement Profile versions and Requirement Catalogue versions are reference data. Delivery Subject workflows do not directly overwrite them.
+Published Requirement Profile versions, Requirement Catalogue versions and Architecture Baselines are immutable reference data. Delivery Subject workflows do not directly overwrite them.
 
 ## Delivery Subject root
 
@@ -71,6 +80,10 @@ deliverySubjects/{subjectId}/requirementChangeProposals/{proposalId}
 deliverySubjects/{subjectId}/requirementMatches/{matchId}
 deliverySubjects/{subjectId}/requirementQualityFindings/{findingId}
 deliverySubjects/{subjectId}/requirementSources/{sourceLinkId}
+deliverySubjects/{subjectId}/architectureContext/{contextId}
+deliverySubjects/{subjectId}/architectureImpacts/{impactId}
+deliverySubjects/{subjectId}/architectureChangeProposals/{proposalId}
+deliverySubjects/{subjectId}/workPackageImplementationTargets/{targetId}
 deliverySubjects/{subjectId}/gaps/{gapId}
 deliverySubjects/{subjectId}/conflicts/{conflictId}
 deliverySubjects/{subjectId}/assumptions/{assumptionId}
@@ -87,272 +100,347 @@ deliverySubjects/{subjectId}/agentRuns/{runId}
 
 ## Requirement Profiles
 
-Root record:
+Root and immutable version semantics remain as before.
+
+Architecture policy is a version-bound subcollection:
 
 ```ts
-requirementProfiles/{profileId} = {
+requirementProfiles/{profileId}/versions/{version}/architecturePolicies/default = {
   id,
-  name,
-  description?,
-  currentPublishedVersion?,
-  active,
-  createdAt,
-  updatedAt
-}
-```
-
-Version:
-
-```ts
-requirementProfiles/{profileId}/versions/{version} = {
   profileId,
-  version,
-  status: "DRAFT" | "PUBLISHED" | "RETIRED",
-  applicableSubjectKinds: [],
-  requiredPerspectiveTypes: [],
-  typePolicies: [],
-  requireExistingRequirementSearchBeforeCreate,
-  duplicateMatchThreshold,
-  contradictionReviewRequired,
-  createdBy,
-  createdAt,
-  publishedAt?
+  profileVersion,
+  requireArchitectureBaseline,
+  requireConfirmedImpactForHighCritical,
+  requireImplementationTargetForHighCritical,
+  allowNeedsReviewElementsForImpact,
+  createdAt
 }
 ```
 
-Rules:
-
-- DRAFT may be edited only through backend admin commands;
-- PUBLISHED content is immutable;
-- publish updates root `currentPublishedVersion`;
-- subject pins exact profile ID/version;
-- no silent subject upgrade when new version publishes.
+PUBLISHED profile/version/policy content is immutable.
 
 ## Requirement Catalogue
 
-Stable current identity:
+Stable current identity and immutable semantic versions remain unchanged. Subject workflows never promote into it directly.
+
+## ArchitectureSource
+
+P0 source type is only `GIT_MARKDOWN`.
 
 ```ts
-requirementCatalog/{id} = {
-  stableKey,
-  type,
-  title,
-  lifecycle,
-  currentVersion,
-  capabilityRefs: [],
-  authoritativeSourceSystem?,
-  authoritativeExternalId?,
+architectureSources/{sourceId} = {
+  id,
+  name,
+  sourceType: "GIT_MARKDOWN",
+  repository,
+  defaultBranch,
+  pathPrefixes: [],
+  enabled,
+  currentCommitSha?,
   createdAt,
   updatedAt
 }
 ```
 
-Immutable version:
+Repository credentials are not stored in readable Firestore documents. They belong in approved backend connector/secret configuration.
+
+## ArchitectureIngestionRun
 
 ```ts
-requirementCatalog/{id}/versions/{version} = {
-  requirementId,
+architectureIngestionRuns/{runId} = {
+  id,
+  sourceCommits: [{ sourceId, repository, branch, commitSha }],
+  status: "QUEUED" | "SCANNING" | "EXTRACTING" | "RECONCILING" |
+          "VALIDATING" | "SUCCEEDED" | "FAILED",
+  schemaVersion,
+  promptSkillVersion,
+  providerId?,
+  modelId?,
+  inputFileCount,
+  changedFileCount,
+  startedAt,
+  endedAt?
+}
+```
+
+The exact source commit set is immutable input metadata for one ingestion run.
+
+## ArchitectureBaseline
+
+```ts
+architectureBaselines/{baselineId} = {
+  id,
   version,
-  type,
-  title,
-  statement,
-  rationale?,
-  criticality,
-  capabilityRefs: [],
-  details: [],
-  sourceVersion?,
-  sourceFingerprint?,
-  publishedAt,
+  status: "DRAFT" | "PUBLISHED" | "SUPERSEDED",
+  sourceCommits: [{ sourceId, repository, branch, commitSha }],
+  ingestionRunIds: [],
+  schemaVersion,
+  fingerprint,
+  createdAt,
+  publishedAt?,
   publishedBy?
 }
 ```
 
-A subject never writes these records as part of requirement discovery. P0 may import/sync them from an external source through backend utilities.
+Published baseline content never mutates.
 
-## Proposed subject Requirement
+A later Git commit produces another ingestion run/baseline. The current pointer may live in application configuration; a previous published baseline becomes SUPERSEDED but remains readable/auditable.
 
-`deliverySubjects/{subjectId}/requirements/{id}` is subject-local proposal state:
+## ArchitectureElement
+
+```ts
+architectureBaselines/{baselineId}/elements/{id} = {
+  id,
+  baselineId,
+  baselineVersion,
+  stableKey,
+  type,
+  name,
+  description?,
+  lifecycle,
+  tags: [],
+  sourceEvidence: [{
+    sourceId,
+    commitSha,
+    path,
+    blobSha?,
+    fingerprint?,
+    lineStart?,
+    lineEnd?,
+    excerpt?,
+    mode: "EXPLICIT" | "INFERRED"
+  }],
+  extractionConfidence?,
+  reviewStatus: "CONFIRMED" | "NEEDS_REVIEW" | "REJECTED",
+  createdAt
+}
+```
+
+Every published element requires source evidence.
+
+## ArchitectureRelationship
+
+```ts
+architectureBaselines/{baselineId}/relationships/{id} = {
+  id,
+  baselineId,
+  baselineVersion,
+  type,
+  sourceElementKey,
+  targetElementKey,
+  description?,
+  sourceEvidence: [...],
+  extractionConfidence?,
+  reviewStatus,
+  createdAt
+}
+```
+
+Every endpoint must resolve inside the complete baseline. Model-proposed aliases never silently merge conflicting stable keys.
+
+## ArchitectureView
+
+```ts
+architectureBaselines/{baselineId}/views/{id} = {
+  id,
+  baselineId,
+  baselineVersion,
+  name,
+  viewType,
+  purpose?,
+  elementKeys: [],
+  relationshipIds: [],
+  sourceEvidence: [],
+  createdAt
+}
+```
+
+Views are projections only; elements/relationships remain canonical normalized topology.
+
+## ArchitectureIngestionFinding
 
 ```ts
 {
   id,
-  type,
-  title,
-  statement,
-  rationale?,
-  priority,
-  criticality,
-  status,
-  ownerId?,
-  capabilityRefs?: [],
-  details?: [{ fieldKey, valueType, ...typedValue }],
-  requiresEvaluation,
-  revision,
+  ingestionRunId,
+  baselineId?,
+  type: "MISSING_STABLE_ID" | "UNRESOLVED_REFERENCE" |
+        "DUPLICATE_ELEMENT" | "CONFLICTING_DEFINITION" |
+        "INVALID_RELATIONSHIP" | "LOW_CONFIDENCE" |
+        "SOURCE_CHANGED" | "OTHER",
+  severity,
+  blocking,
+  message,
+  sourceEvidence: [],
+  relatedStableKeys: [],
+  status: "OPEN" | "RESOLVED" | "WAIVED",
   createdAt,
   updatedAt
 }
 ```
 
-It is never rendered/labeled as enterprise CURRENT.
+Blocking findings prevent baseline publication according to application policy.
 
-## RequirementChangeProposal
+## DeliverySubjectArchitectureContext
 
 ```ts
 {
   id,
   deliverySubjectId,
-  changeType: "CREATE" | "MODIFY" | "SUPERSEDE" | "RETIRE" | "NO_CHANGE",
-  baselineRequirementId?,
-  baselineVersion?,
-  proposedRequirementId?,
-  rationale,
-  status,
-  relatedConflictIds: [],
-  supersedesProposalIds: [],
-  createdAt,
+  architectureBaselineId,
+  architectureBaselineVersion,
+  baselineFingerprint,
+  status: "CURRENT" | "STALE_BASELINE",
+  pinnedAt,
   updatedAt
 }
 ```
 
-For MODIFY/SUPERSEDE/RETIRE/NO_CHANGE, baseline ID/version pin what was analyzed. If current catalogue advances, service changes status to `STALE_BASELINE` until rebase/reassessment.
+When the profile requires architecture analysis, readiness requires a current pinned context.
 
-## RequirementMatch
-
-Persist existing-requirement/parallel-proposal retrieval judgments:
+## RequirementArchitectureImpact
 
 ```ts
 {
   id,
-  subjectRequirementId,
-  candidateKind: "BASELINE_REQUIREMENT" | "ACTIVE_PROPOSAL",
-  candidateId,
-  candidateVersion?,
-  relationship: "DUPLICATE" | "OVERLAPS" | "CONTRADICTS" | "RELATED",
-  score?,
+  deliverySubjectId,
+  requirementId,
+  requirementRevision,
+  architectureBaselineId,
+  architectureBaselineVersion,
+  architectureElementKey,
+  architectureElementFingerprint?,
+  impactType,
   rationale,
-  blocking,
-  status: "UNREVIEWED" | "CONFIRMED" | "DISMISSED",
+  confidence?,
+  sourceRelationshipIds: [],
+  status: "PROPOSED" | "CONFIRMED" | "REJECTED" | "STALE_BASELINE",
+  confirmedBy?,
   createdAt,
   updatedAt
 }
 ```
 
-Blocking UNREVIEWED candidates prevent READY.
+Impact is both requirement-revision and architecture-baseline specific.
 
-## RequirementQualityFinding
-
-Generated by deterministic evaluation of the subject's pinned Requirement Profile version:
+## ArchitectureChangeProposal
 
 ```ts
 {
   id,
-  profileId,
-  profileVersion,
-  requirementId?,
-  ruleId,
-  severity,
-  blocking,
-  message,
-  status: "OPEN" | "RESOLVED" | "WAIVED",
-  waiverDecisionId?,
+  deliverySubjectId,
+  targetType: "ELEMENT" | "RELATIONSHIP",
+  changeType: "ADD" | "MODIFY" | "REMOVE" | "DEPRECATE" | "NO_CHANGE",
+  architectureBaselineId,
+  architectureBaselineVersion,
+  baselineTargetId?,
+  baselineTargetFingerprint?,
+  proposedStableKey?,
+  proposedType?,
+  proposedName?,
+  proposedDescription?,
+  sourceRequirementIds: [],
+  rationale,
+  status: "DRAFT" | "PROPOSED" | "CONFIRMED" | "REJECTED" |
+          "SUPERSEDED" | "STALE_BASELINE",
   createdAt,
   updatedAt
 }
 ```
 
-Profile upgrade re-evaluates findings only after explicit subject upgrade.
+These records are proposed future architecture only. They never mutate a published baseline or Git source in P0.
 
-## RequirementRevision and RequirementSource
+## WorkPackageImplementationTarget
 
-Every semantic edit appends immutable RequirementRevision. RequirementSource remains the canonical provenance relation and can include:
-
-```text
-CONTRIBUTION | EVIDENCE | KNOWLEDGE_REFERENCE | DECISION |
-ASSUMPTION | SOURCE_ARTIFACT | BASELINE_REQUIREMENT | AI_INFERENCE
+```ts
+{
+  id,
+  deliverySubjectId,
+  workPackageId,
+  architectureImpactId,
+  architectureElementKey,
+  repositoryElementKey?,
+  teamElementKey?,
+  createdAt
+}
 ```
 
-Source version may be retained.
+This is the machine-readable bridge from requirement impact to actual delivery target. Repository/team fields are optional because not every current topology is complete.
+
+## Proposed subject Requirement / change / match / profile findings
+
+Existing requirement/current-vs-proposed structures remain unchanged:
+
+- proposed Requirement;
+- RequirementRevision;
+- RequirementChangeProposal;
+- RequirementMatch;
+- RequirementQualityFinding;
+- RequirementSource.
+
+Stale requirement baseline remains explicit and blocking.
 
 ## KnowledgeReference / ProposedDiff
 
-KnowledgeReference includes stable/source identity plus `version` and optional `fingerprint`.
-
-ProposedDiff records `baselineVersion`/`baselineFingerprint` where available. A source-version change can move diff to `STALE_BASELINE`; P0 never writes it back automatically.
+KnowledgeReference includes source identity/version/fingerprint. ProposedDiff pins baseline version/fingerprint and may become STALE_BASELINE. P0 never writes it back automatically.
 
 ## Membership / assignments / tasks
 
-Membership controls subject access. Perspective assignment controls authority. Task lifecycle remains:
-
-```text
-OPEN | IN_PROGRESS | ANSWERED | PROCESSING |
-WAITING_ON_OTHER | COMPLETED | CANCELLED
-```
-
-My Work reads private rebuildable `users/{uid}/taskInbox`; authoritative task remains subject-scoped.
+Membership controls subject access. Perspective assignment controls authority. My Work uses `users/{uid}/taskInbox`; authoritative Task remains subject-scoped.
 
 ## Verification
 
-Append-only human judgment:
+Append-only human judgment. Requirement verification targets exact proposed Requirement revision.
 
-```text
-CONTRIBUTION        -> no target revision
-REQUIREMENT         -> targetRevision required
-PROPOSED_DIFF       -> targetRevision required
-```
+Architecture impact confirmation is modeled on `RequirementArchitectureImpact.status/confirmedBy` in P0 rather than reusing Requirement Verification semantics.
 
-Requirement verification relates to proposed subject Requirement revision, not catalogue version promotion.
+## WorkPackage / Acceptance / Evaluation / Dependency
 
-## Conflict / Assumption / Decision / WorkPackage
+WorkPackage keeps targetAreaRef/team/coordinator for human-friendly delivery grouping. Where the pinned architecture policy requires implementation targets, one or more `WorkPackageImplementationTarget` records must link the package to confirmed architecture impacts.
 
-Conflict supports 2+ positions, including baseline/proposal references. Assumptions use explicit criticality/blocking semantics. Decisions remain human-owned. WorkPackage holds proposed requirement IDs and target implementation area/team.
+Acceptance/Evaluation requirements remain revision-bound for Requirement targets.
 
-## AcceptanceCriterion / Evaluation
+## AgentThread / AgentRun context
 
-```text
-REQUIREMENT      -> targetRevision required
-WORK_PACKAGE     -> no requirement revision
-DELIVERY_SUBJECT -> no requirement revision
-```
+OpenCode state is disposable. Context envelopes can include:
 
-## AgentThread / AgentRun
-
-Unchanged core semantics: OpenCode state is disposable. `contextRevisionPresented` means the highest subject revision actually shown to that session. Never equate same-run `domainRevisionAtEnd` with context presented unless re-presented.
-
-Context envelopes should include:
-
-- pinned Requirement Profile/version and relevant type rules;
-- current baseline requirements/versions relevant to the task;
-- proposed change operations;
-- requirement matches/collisions;
-- proposed requirement revisions/details;
+- pinned Requirement Profile/version and architecture policy;
+- current baseline requirements/versions;
+- proposed requirement changes/matches/findings;
 - current knowledge refs/diffs;
-- profile findings;
-- existing gaps/conflicts/decisions.
+- DeliverySubjectArchitectureContext;
+- bounded relevant architecture elements/relationships/source evidence;
+- architecture impacts/change proposals;
+- existing gaps/conflicts/decisions/work packages/targets.
+
+Do not send the full architecture baseline graph by default.
 
 ## Realtime subscriptions
 
-- My Work: current user's `taskInbox`.
-- Delivery Overview: root + change counts + profile findings + blockers.
-- Drill: task/messages + current baseline/proposed requirement/change/matches.
-- Requirement detail: baseline reference/version + proposal/revisions/sources/verifications/findings.
-- Catalogue: current requirement records/history/proposal references.
-- Conflict: positions/tasks/decision.
-- War Room: AgentRuns/events/tasks/baseline/profile metadata.
+- My Work: current user's taskInbox.
+- Delivery Overview: root + change/profile/architecture blockers.
+- Drill: task/messages + relevant baseline/proposal/matches/topology.
+- Requirement detail: requirement baseline/proposal/history + architecture impacts.
+- Architecture Impact: architecture context + bounded graph + impacts/change proposals.
+- Architecture Admin: sources/ingestion runs/findings/baseline publication.
+- War Room: AgentRuns/events/tasks + ingestion-run diagnostics.
 
 ## Security/access
 
 - subject data: active membership or ADMIN policy;
-- profiles/catalogue: signed-in read-only in PoC;
-- authoritative writes: backend-only;
-- profile publish and catalogue promotion/import: privileged backend service only;
-- browser never receives admin/OpenCode/Vertex credentials.
+- profiles/catalogue/published architecture baseline: signed-in read-only in PoC;
+- architecture ingestion runs: ADMIN read in current PoC rules;
+- authoritative writes/publication: backend-only;
+- Git credentials/tokens are never readable Firestore data or browser state;
+- browser never receives Admin SDK/OpenCode/Vertex credentials.
 
 ## Data-size / consistency rules
 
-- no large source bytes in Firestore;
+- do not persist full Markdown repository content as architecture truth; retain normalized records plus concise source evidence/reference metadata;
 - no unbounded arrays on Delivery Subject root;
 - versions/history/relations as documents/subcollections;
-- current baseline versions are immutable snapshots;
+- published baseline versions are immutable snapshots;
 - subject proposals never overwrite baseline records;
 - every AI mutation carries expected revisions/idempotency keys;
-- stale baseline and stale subject revision are explicit states, never last-write-wins.
+- stale requirement/knowledge/architecture baseline is explicit, never last-write-wins;
+- incremental architecture extraction may reuse unchanged normalized objects only when source fingerprints still match.
