@@ -3,13 +3,25 @@
 ## PoC target
 
 ```text
+Architecture Git repos
+      |
+      | backend-only approved credentials/integration
+      v
+Cloud Run: Req Helper Next.js/API
+  -> architecture ingestion service path
+       -> exact Git commits / Markdown
+       -> OpenCode/Vertex extraction
+       -> Firestore normalized ArchitectureBaseline
+  -> normal Req Helper APIs
+       -> Firestore authoritative structured state
+       -> GCS uploaded source files if enabled
+       -> OpenCode service/SDK -> Vertex AI / Model Garden
+
 Browser
-  -> Cloud Run: Req Helper Next.js/API
-       -> Firestore (authoritative structured state)
-       -> GCS (uploaded source files, if enabled)
-       -> OpenCode service/SDK
-            -> Vertex AI / Model Garden
+  -> Cloud Run APIs + authorized Firestore reads
 ```
+
+No Sparx connectivity is required in P0.
 
 ## Minimum GCP services
 
@@ -19,27 +31,70 @@ Browser
 - Artifact Registry;
 - Identity Platform/Firebase Auth or enterprise identity;
 - GCS only if file upload is enabled;
-- Secret Manager only for unavoidable non-ADC secrets.
+- Secret Manager only for unavoidable non-ADC/non-workload integration secrets.
+
+Do not add Pub/Sub, Redis, Kafka or a separate ingestion platform solely for the PoC unless a demonstrated operational need appears.
 
 ## Authentication and service identity
 
-Prefer Application Default Credentials/workload identity.
+Prefer Application Default Credentials/workload identity for GCP services.
 
 Req Helper service identity receives only what it needs to:
 
 - read/write Firestore;
-- access the configured GCS bucket when uploads are enabled;
-- invoke approved Vertex models indirectly/directly as configured;
-- access explicit enterprise integrations.
+- access GCS when enabled;
+- invoke approved Vertex models/OpenCode;
+- access explicit enterprise/Git integrations.
 
-Do not commit or bake service-account JSON keys into images.
+Do not commit/bake service-account JSON keys or Git tokens into images.
 
-OpenCode Vertex configuration can use runtime project/location, e.g.:
+## Git architecture source access
+
+Architecture source access is **backend-only**.
+
+P0 supported source is Git Markdown repositories. Credentials may be supplied through an approved GitHub/GitLab/enterprise connector or Secret Manager where unavoidable.
+
+Rules:
+
+- browser never receives repository access token;
+- OpenCode/model never receives unrestricted repository credential;
+- application fetch layer resolves exact repository + branch + commit;
+- ingestion passes bounded Markdown content + immutable source metadata to the model;
+- Firestore stores repository identifiers, exact commit SHAs, paths, fingerprints and normalized source evidence — not credentials;
+- P0 does not push/write commits back to architecture repositories.
+
+Illustrative non-secret configuration:
 
 ```text
-GOOGLE_CLOUD_PROJECT
-GOOGLE_VERTEX_LOCATION
+ARCHITECTURE_SOURCE_DEFAULT_BRANCH=main
+ARCHITECTURE_INGESTION_SCHEMA_VERSION=1
+ARCHITECTURE_INGESTION_PROMPT_VERSION=poc-v1
 ```
+
+Any actual repository credential is deployment secret/connector state, not `.env.example` source-controlled data.
+
+## Architecture ingestion execution shape
+
+For the one-week PoC, architecture ingestion can run as a privileged backend/admin operation in the existing Cloud Run application or as a Cloud Run Job if execution duration makes request handling awkward.
+
+Do not create another permanent service unless needed.
+
+Lifecycle:
+
+```text
+admin starts ingestion
+ -> backend resolves exact commits
+ -> scans/fingerprints Markdown
+ -> invokes bounded LLM extraction jobs
+ -> reconciles/validates
+ -> persists findings/candidate baseline
+ -> admin reviews blockers
+ -> backend publishes immutable ArchitectureBaseline
+```
+
+Publication must call deterministic architecture publication validation. Model output alone never changes the published baseline pointer/version.
+
+If ingestion is long-running, prefer Cloud Run Job/manual admin execution for P0 rather than holding an interactive request open. Product correctness must not depend on one process staying alive; run state/findings remain in Firestore.
 
 ## OpenCode deployment
 
@@ -56,25 +111,26 @@ Benefits:
 
 OpenCode local session persistence is disposable. Req Helper stores logical thread/session-generation metadata and authoritative context in Firestore.
 
+Architecture ingestion may use the same OpenCode/Vertex provider but has separate `ArchitectureIngestionRun` state, not participant AgentThread state.
+
 ### Embedded process
 
-Acceptable for the PoC if operationally simpler, but lifecycle is more coupled and Cloud Run churn makes session state more ephemeral.
-
-Both options must satisfy the same recovery tests.
+Acceptable for PoC if operationally simpler. Both options must satisfy identical state-recovery guarantees.
 
 ## Cloud Run scaling
 
 Req Helper can scale horizontally because correctness lives in Firestore.
 
-- AgentThread Firestore lease serializes one logical thread.
+- AgentThread Firestore lease serializes one logical participant thread.
 - Different AgentThreads may run concurrently.
+- Architecture baseline publication must use application-level compare-and-set/version checks so two ingestion runs cannot both silently become current.
 - Never rely on in-memory locks for correctness.
 
 ## Firestore location
 
-Choose an approved location before database creation according to bank/data-residency policy. The repository does not prescribe a compliance region.
+Choose approved location before database creation according to bank/data-residency policy. Repository does not prescribe a compliance region.
 
-Vertex location likewise follows approved model availability/policy. Example configs are not compliance decisions.
+Vertex/model location follows approved model availability/policy.
 
 ## Source artifact storage
 
@@ -88,23 +144,25 @@ Browser -> signed/backend upload flow -> GCS
 
 Do not place large source document bytes in Firestore.
 
-For PoC simplicity, link-only `SourceArtifact` records are acceptable if file upload setup would threaten the one-week vertical slice.
+Architecture Markdown is read from Git at exact commits; do not duplicate entire repositories into Firestore. Persist normalized architecture plus concise source evidence/reference metadata.
 
 ## Realtime browser access
 
 Browser:
 
 - authenticate;
-- read only subjects where active membership exists (or admin policy allows);
-- subscribe narrowly;
-- use Cloud Run API for authoritative mutations.
+- read only subjects where membership exists (or admin policy allows);
+- read published reference baseline data according to PoC rules;
+- use Cloud Run API for authoritative mutations;
+- never receives Git/Admin SDK/OpenCode/Vertex credentials.
 
 Server:
 
 - Admin SDK/service identity;
-- membership + capability + perspective-authority checks;
+- membership/capability/perspective checks;
 - Firestore transactions/audit;
-- OpenCode invocation;
+- OpenCode/Vertex invocation;
+- Git source access;
 - GCS access where applicable.
 
 ## Required environment variables
@@ -120,26 +178,32 @@ OPENCODE_MODEL_ID=...
 NEXT_PUBLIC_FIREBASE_API_KEY=...
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
-REQ_HELPER_SOURCE_BUCKET=...   # only if uploads enabled
+REQ_HELPER_SOURCE_BUCKET=...             # only if uploads enabled
+ARCHITECTURE_INGESTION_SCHEMA_VERSION=1
+ARCHITECTURE_INGESTION_PROMPT_VERSION=poc-v1
 ```
 
-Firebase web configuration identifies the Firebase project; it is not an authorization mechanism.
+Git credentials are deliberately not shown as ordinary source-controlled environment configuration; use approved connector/secret mechanisms.
 
 ## PoC deployment verification
 
 Before war-room week verify:
 
-1. two **authorized members** can observe the same subject live;
-2. a signed-in non-member cannot read that subject;
+1. two authorized members observe same subject live;
+2. signed-in non-member cannot read subject;
 3. browser direct authoritative writes are denied;
-4. API mutation by user A is visible to authorized user B without refresh;
-5. two different AgentThreads run concurrently;
-6. same AgentThread cannot run twice concurrently;
-7. OpenCode restart/session deletion causes session recreation + FULL hydration, not data loss;
-8. `contextRevisionPresented` remains the actual presented revision, not same-run `domainRevisionAtEnd`;
-9. Cloud Run restart causes no product-state loss;
-10. Vertex calls use the expected project/model/location;
-11. human answer persists if model/provider fails after submit;
-12. uploaded source bytes (if enabled) are in GCS while Firestore holds only metadata;
-13. audit events identify human vs AI/system actor;
-14. final package/read API reconstructs solely from authoritative persisted domain state.
+4. API mutation by user A is visible to authorized user B;
+5. different AgentThreads run concurrently; same AgentThread serializes;
+6. OpenCode restart/session deletion recreates + FULL hydrates without product-data loss;
+7. `contextRevisionPresented` remains actual presented subject revision;
+8. Cloud Run restart causes no product-state loss;
+9. Vertex calls use expected project/model/location;
+10. human answer persists if model/provider fails after submit;
+11. source uploads, if enabled, keep bytes in GCS and metadata in Firestore;
+12. architecture Git credentials never appear in browser/Firestore-readable source config/model prompts;
+13. ingestion run records exact source commits/prompt/schema/model versions;
+14. every published architecture element/relationship has source evidence;
+15. blocking architecture publication findings prevent publish;
+16. architecture baseline publication is atomic/version-checked;
+17. requirement impact can expose exact architecture source evidence;
+18. final package reconstructs solely from authoritative persisted domain state and pinned baselines.
