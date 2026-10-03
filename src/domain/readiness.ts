@@ -127,6 +127,16 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     (r) => critical(r.criticality) && r.status !== "SUPERSEDED",
   );
 
+  const verificationHasAuthority = (verification: Verification) =>
+    Boolean(verification.perspectiveId) &&
+    assignments.some(
+      (assignment) =>
+        assignment.perspectiveId === verification.perspectiveId &&
+        assignment.userId === verification.verifierId &&
+        assignment.status === "ACTIVE" &&
+        (assignment.relationship === "OWNER" || assignment.relationship === "DELEGATE"),
+    );
+
   const requirementIsVerified = (requirement: Requirement) =>
     verifications.some(
       (verification) =>
@@ -134,7 +144,8 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
         verification.targetId === requirement.id &&
         verification.targetRevision === requirement.revision &&
         verification.status === "ACTIVE" &&
-        verification.verdict === "VERIFIED",
+        verification.verdict === "VERIFIED" &&
+        verificationHasAuthority(verification),
     );
 
   const unverifiedCriticalRequirementIds = criticalRequirements
@@ -146,8 +157,8 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
     blocking: true,
     message:
       unverifiedCriticalRequirementIds.length === 0
-        ? "All high/critical requirements have an active verification for their current revision."
-        : `${unverifiedCriticalRequirementIds.length} high/critical requirement(s) lack current-revision verification.`,
+        ? "All high/critical requirements have an authoritative active verification for their current revision."
+        : `${unverifiedCriticalRequirementIds.length} high/critical requirement(s) lack current-revision OWNER/DELEGATE verification.`,
     relatedObjectIds: unverifiedCriticalRequirementIds,
   });
 
