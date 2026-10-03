@@ -185,6 +185,71 @@ describe("evaluateReadiness", () => {
     ).toBe(true);
   });
 
+  it("does not accept stale requirement-targeted acceptance criteria", () => {
+    const snapshot = seedSnapshot();
+    const result = evaluateReadiness({
+      ...snapshot,
+      acceptanceCriteria: [
+        {
+          id: "ac-data-old",
+          deliverySubjectId: deliverySubject.id,
+          targetType: "REQUIREMENT",
+          targetId: "r-verification-state",
+          targetRevision: 99,
+          then: "Verification source is defined.",
+          verificationType: "HUMAN_REVIEW",
+          automatable: false,
+          priority: "HIGH",
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "ac-api-old",
+          deliverySubjectId: deliverySubject.id,
+          targetType: "REQUIREMENT",
+          targetId: "r-api-exposure",
+          targetRevision: 99,
+          then: "Integration exposes the state.",
+          verificationType: "AUTOMATED_TEST",
+          automatable: true,
+          priority: "HIGH",
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    });
+
+    expect(
+      result.checks.find((c) => c.code === "CRITICAL_REQUIREMENTS_HAVE_ACCEPTANCE")?.passed,
+    ).toBe(false);
+  });
+
+  it("does not accept a stale requirement-targeted eval", () => {
+    const snapshot = seedSnapshot();
+    const result = evaluateReadiness({
+      ...snapshot,
+      evaluations: [
+        {
+          id: "eval-api-old",
+          deliverySubjectId: deliverySubject.id,
+          targetType: "REQUIREMENT",
+          targetId: "r-api-exposure",
+          targetRevision: 99,
+          name: "API contract check",
+          evaluationType: "DETERMINISTIC_TEST",
+          expectedBehaviour: "Verification state is exposed according to the contract.",
+          failureBehaviour: "Fail the downstream handoff check.",
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    });
+
+    expect(
+      result.checks.find((c) => c.code === "REQUIRED_EVALS_DEFINED")?.passed,
+    ).toBe(false);
+  });
+
   it("does not let an informational score override a blocking failure", () => {
     const snapshot = seedSnapshot();
     const result = evaluateReadiness({
