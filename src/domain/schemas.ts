@@ -38,6 +38,45 @@ export const AssignmentRelationship = z.enum([
   "REVIEWER",
 ]);
 
+export const SystemRole = z.enum([
+  "ADMIN",
+  "PARTICIPANT",
+  "DELIVERY_LEAD",
+  "WAR_ROOM_OPERATOR",
+]);
+
+export const UserProfileSchema = z.object({
+  id: z.string().min(1),
+  displayName: z.string().min(1),
+  email: z.string().email().optional(),
+  active: z.boolean().default(true),
+  systemRoles: z.array(SystemRole).min(1),
+  expertisePerspectiveTypes: z.array(PerspectiveType).default([]),
+  title: z.string().optional(),
+  team: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const RoleTemplateSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  systemRoles: z.array(SystemRole).default(["PARTICIPANT"]),
+  suggestedPerspectiveTypes: z.array(PerspectiveType).default([]),
+  active: z.boolean().default(true),
+});
+
+export const PerspectiveTemplateSchema = z.object({
+  id: z.string().min(1),
+  type: PerspectiveType,
+  name: z.string().min(1),
+  description: z.string().optional(),
+  defaultCriticality: Criticality.optional(),
+  active: z.boolean().default(true),
+  defaultPromptSkill: z.string().optional(),
+});
+
 export const RequirementType = z.enum([
   "BUSINESS",
   "FUNCTIONAL",
@@ -270,6 +309,9 @@ export const TaskSchema = z.object({
 export type DeliverySubject = z.infer<typeof DeliverySubjectSchema>;
 export type Perspective = z.infer<typeof PerspectiveSchema>;
 export type PerspectiveAssignment = z.infer<typeof PerspectiveAssignmentSchema>;
+export type UserProfile = z.infer<typeof UserProfileSchema>;
+export type RoleTemplate = z.infer<typeof RoleTemplateSchema>;
+export type PerspectiveTemplate = z.infer<typeof PerspectiveTemplateSchema>;
 export type Contribution = z.infer<typeof ContributionSchema>;
 export type Requirement = z.infer<typeof RequirementSchema>;
 export type RequirementSource = z.infer<typeof RequirementSourceSchema>;
