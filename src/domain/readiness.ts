@@ -20,6 +20,7 @@ import type {
 import type {
   ArchitectureChangeProposal,
   ArchitectureElement,
+  ArchitectureImpactAssessment,
   ArchitectureRelationship,
   DeliverySubjectArchitectureContext,
   RequirementArchitectureImpact,
@@ -65,6 +66,7 @@ export type ReadinessSnapshot = {
   architectureElements?: ArchitectureElement[];
   architectureRelationships?: ArchitectureRelationship[];
   architectureImpacts?: RequirementArchitectureImpact[];
+  architectureImpactAssessments?: ArchitectureImpactAssessment[];
   architectureChangeProposals?: ArchitectureChangeProposal[];
   workPackageImplementationTargets?: WorkPackageImplementationTarget[];
 };
@@ -99,6 +101,7 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
   const architectureElements = snapshot.architectureElements ?? [];
   const architectureRelationships = snapshot.architectureRelationships ?? [];
   const architectureImpacts = snapshot.architectureImpacts ?? [];
+  const architectureImpactAssessments = snapshot.architectureImpactAssessments ?? [];
   const architectureChangeProposals = snapshot.architectureChangeProposals ?? [];
   const workPackageImplementationTargets = snapshot.workPackageImplementationTargets ?? [];
   const architecturePolicy = snapshot.architecturePolicy;
@@ -275,6 +278,38 @@ export function evaluateReadiness(snapshot: ReadinessSnapshot): ReadinessResult 
         : `${unauthorizedArchitectureImpactIds.length} confirmed architecture impact(s) lack active OWNER/DELEGATE authority.`,
     relatedObjectIds: unauthorizedArchitectureImpactIds,
   });
+
+  if (architecturePolicy?.requireCompleteImpactAssessmentForHighCritical) {
+    const missingCoverageRequirementIds = criticalRequirements
+      .filter((requirement) => {
+        const assessment = architectureImpactAssessments.find(
+          (candidate) =>
+            candidate.requirementId === requirement.id &&
+            candidate.requirementRevision === requirement.revision &&
+            candidate.status === "COMPLETE" &&
+            candidate.traversalPolicyId === architecturePolicy.traversalPolicyId &&
+            candidate.traversalPolicyVersion === architecturePolicy.traversalPolicyVersion &&
+            (!snapshot.architectureContext ||
+              (candidate.architectureBaselineId === snapshot.architectureContext.architectureBaselineId &&
+                candidate.architectureBaselineVersion === snapshot.architectureContext.architectureBaselineVersion)),
+        );
+        if (!assessment || assessment.unresolvedElementKeys.length > 0) return true;
+        const assessed = new Set(assessment.assessedElementKeys);
+        return assessment.candidateElementKeys.some((key) => !assessed.has(key));
+      })
+      .map((requirement) => requirement.id);
+
+    checks.push({
+      code: "CRITICAL_REQUIREMENTS_HAVE_COMPLETE_ARCHITECTURE_ASSESSMENT",
+      passed: missingCoverageRequirementIds.length === 0,
+      blocking: true,
+      message:
+        missingCoverageRequirementIds.length === 0
+          ? "All high/critical requirements have complete architecture impact coverage under the pinned traversal policy."
+          : `${missingCoverageRequirementIds.length} high/critical requirement(s) lack a complete current-revision architecture impact assessment.`,
+      relatedObjectIds: missingCoverageRequirementIds,
+    });
+  }
 
   if (architecturePolicy?.requireConfirmedImpactForHighCritical) {
     const missingImpactRequirementIds = criticalRequirements
